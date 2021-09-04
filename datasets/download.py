@@ -3,9 +3,20 @@ import pandas as pd
 
 api = overpy.Overpass()
 
+# find the manhattan area
+# result = api.query("""
+#     is_in(40.766052, -73.968787)->.a;
+# rel(pivot.a)[boundary=administrative];
+# out tags;
+#     """)
+
+# for foo in result.relations:
+#     print(foo.id,foo.tags.get("name"))
+
 # get all streets in manhattan
-result = api.query("""
-    area[name="Manhattan"];
+manhattan_id = 8398124
+result = api.query(f"""
+    rel({manhattan_id});map_to_area;
 way[highway~"^(primary|secondary|tertiary|residential|unclassified|living_street)$"](area);
     (._;>;);
     out body;
