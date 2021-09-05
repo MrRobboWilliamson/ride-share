@@ -1,0 +1,564 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<title>mapboxgl-jupyter viz</title>
+<meta charset='UTF-8' />
+<meta name='viewport'
+      content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+<script type='text/javascript'
+        src='https://api.tiles.mapbox.com/mapbox-gl-js/v1.0.0/mapbox-gl.js'></script>
+<link type='text/css'
+      href='https://api.tiles.mapbox.com/mapbox-gl-js/v1.0.0/mapbox-gl.css' 
+      rel='stylesheet' />
+
+<style type='text/css'>
+    body { margin:0; padding:0; }
+    .map { position: absolute; top:0; bottom:0; width:100%; }
+    .legend {
+        background-color: white;
+        color: #6e6e6e;
+        border-radius: 3px;
+        bottom: 10px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+        font: 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+        padding: 0;
+        position: absolute;
+        right: 10px;
+        z-index: 1;
+        min-width: 100px;
+    }
+   .legend.horizontal {bottom: 10px; text-align: left;}
+
+    /* legend header */
+    .legend .legend-header { border-radius: 3px 3px 0 0; background: white; }
+    .legend .legend-title {
+        padding: 6px 12px 6px 12px;
+        text-shadow: 0 0 2px white;
+        text-transform: capitalize;
+        text-align: center;
+        font-weight: bold !important;
+        font-size: 14px;
+        font: 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+        max-width: 160px;
+    }
+    .legend-title {padding: 6px 12px 6px 12px; text-shadow: 0 0 2px #FFF; text-transform: capitalize; text-align: center; max-width: 160px; font-size: 0.9em; font-weight: bold;}
+    .legend.horizontal .legend-title {text-align: left;}
+
+    /* legend items */
+    .legend-content {margin: 6px 12px 6px 12px; overflow: hidden; padding: 0; float: left; list-style: none; font-size: 0.8em;}
+    .legend.vertical .legend-item {white-space: nowrap;}
+    .legend-value {display: inline-block; line-height: 18px; vertical-align: top;}
+    .legend.horizontal ul.legend-content li.legend-item .legend-value,
+    .legend.horizontal ul.legend-content li.legend-item {display: inline-block; float: left; width: 30px; margin-bottom: 0; text-align: center; min-height: 30px;}
+
+    /* legend key styles */
+    .legend-key {display: inline-block; height: 10px;}
+    .legend-key.default, .legend-key.square {border-radius: 0;}
+    .legend-key.circle {border-radius: 50%;}
+    .legend-key.rounded-square {border-radius: 20%;}
+    .legend.vertical .legend-key {width: 10px; margin-right: 5px; margin-left: 1px;}
+    .legend.horizontal .legend-key {width: 30px; margin-right: 0; margin-top: 1px; float: left;}
+    .legend.horizontal .legend-key.square, .legend.horizontal .legend-key.rounded-square, .legend.horizontal .legend-key.circle {margin-left: 10px; width: 10px;}
+    .legend.horizontal .legend-key.line {margin-left: 5px;}
+    .legend.horizontal .legend-key.line, .legend.vertical .legend-key.line {border-radius: 10%; width: 20px; height: 3px; margin-bottom: 2px;}
+
+    /* gradient bar alignment */
+    .gradient-bar {margin: 6px 12px 6px 12px;}
+    .legend.horizontal .gradient-bar {width: 88%; height: 10px;}
+    .legend.vertical .gradient-bar {width: 10px; min-height: 50px; position: absolute; bottom: 4px;}
+
+    /* contiguous vertical bars (discrete) */
+    .legend.vertical.contig .legend-key {height: 15px; width: 10px;}
+    .legend.vertical.contig li.legend-item {height: 15px;}
+    .legend.vertical.contig {padding-bottom: 6px;}
+
+    /* vertical radius legend */
+    .legend.horizontal.legend-variable-radius ul.legend-content li.legend-item .legend-value,
+    .legend.horizontal.legend-variable-radius ul.legend-content li.legend-item {width: 30px; min-height: 20px;}
+
+    /* scale annotation */
+    .mapboxgl-ctrl.mapboxgl-ctrl-scale { border-color: #6e6e6e; 
+                                         background-color: white; 
+                                         color: #131516; }
+</style>
+
+
+<style>
+    .gradient-bar.bordered, .legend-key.bordered { border: solid black 0.2px; }
+</style>
+
+
+</head>
+<body>
+
+<div id='map' class='map'></div>
+
+<script type='text/javascript'>
+
+var legendHeader;
+
+function calcColorLegend(myColorStops, title) {
+    // create legend
+    var legend = document.createElement('div'),
+        legendContainer = document.getElementsByClassName('mapboxgl-ctrl-bottom-right')[0];
+
+    if ('circle' === 'contiguous-bar') {
+        legend.className = 'legend vertical contig';
+    }
+    else {
+        legend.className = 'legend vertical';
+    }
+    legend.id = 'legend-0';
+    document.body.appendChild(legend);
+    // add legend header and content elements
+    var mytitle = document.createElement('div'),
+        legendContent = document.createElement('ul');
+    legendHeader = document.createElement('div');
+    mytitle.textContent = title;
+    mytitle.className = 'legend-title'
+    legendHeader.className = 'legend-header'
+    legendContent.className = 'legend-content'
+    legendHeader.appendChild(mytitle);
+    legend.appendChild(legendHeader);
+    legend.appendChild(legendContent);
+    if (false === true) {
+        var gradientText = 'linear-gradient(to right, ',
+            gradient = document.createElement('div');
+        gradient.className = 'gradient-bar';
+        legend.appendChild(gradient);
+    }
+    // calculate a legend entries on a Mapbox GL Style Spec property function stops array
+    for (p = 0; p < myColorStops.length; p++) {
+        if (!!document.getElementById('legend-color-points-value-' + p)) {
+            // update the legend if it already exists
+            document.getElementById('legend-color-points-value-' + p).textContent = myColorStops[p][0];
+            document.getElementById('legend-color-points-id-' + p).style.backgroundColor = myColorStops[p][1];
+        }
+        else {
+            // create the legend if it doesn't yet exist
+            var item = document.createElement('li');
+            item.className = 'legend-item';
+            var key = document.createElement('span');
+            key.className = 'legend-key circle';
+            key.id = 'legend-color-points-id-' + p;
+            key.style.backgroundColor = myColorStops[p][1];
+            var value = document.createElement('span');
+            value.className = 'legend-value';
+            value.id = 'legend-color-points-value-' + p;
+            item.appendChild(key);
+            item.appendChild(value);
+            legendContent.appendChild(item);
+            
+            data = document.getElementById('legend-color-points-value-' + p)
+            // round number values in legend if precision defined
+            if ((typeof(myColorStops[p][0]) == 'number') && (typeof(null) == 'number')) {
+                data.textContent = myColorStops[p][0].toFixed(null);
+            }
+            else {
+                data.textContent = myColorStops[p][0];
+            }
+            // add color stop to gradient list
+            if (false === true) {
+                if (p < myColorStops.length - 1) {
+                    gradientText = gradientText + myColorStops[p][1] + ', ';
+                }
+                else {
+                    gradientText = gradientText + myColorStops[p][1] + ')';
+                }
+                if ('vertical' === 'vertical') {
+                    gradientText = gradientText.replace('to right', 'to bottom');
+                }
+            }
+        }
+    }
+    if (false === true) {
+        // convert to gradient scale appearance
+        gradient.style.background = gradientText;
+        // hide legend keys generated above
+        var keys = document.getElementsByClassName('legend-key');
+        for (var i=0; i < keys.length; i++) {
+            keys[i].style.visibility = 'hidden';
+        }
+        if ('vertical' === 'vertical') {
+            gradient.style.height = (legendContent.offsetHeight - 6) + 'px';
+        }
+    }
+    // add class for styling bordered legend keys
+    if (true) {
+        var keys = document.getElementsByClassName('legend-key');
+        for (var i=0; i < keys.length; i++) {
+            if (keys[i]) {
+                keys[i].classList.add('bordered');
+            }
+        }
+        var gradientBars = document.getElementsByClassName('gradient-bar');
+        for (var i=0; i < keys.length; i++) {
+            if (gradientBars[i]) {
+                gradientBars[i].classList.add('bordered');
+            }
+        }
+    }
+    // update right-margin for compact Mapbox attribution based on calculated legend width
+    updateAttribMargin(legend);
+    updateLegendMargin(legend);
+}
+
+
+function calcRadiusLegend(myRadiusStops, title, color) {
+
+    // maximum legend item height
+    var maxLegendItemHeight = 2 * myRadiusStops[myRadiusStops.length - 1][1];
+
+    // create legend
+    var legend = document.createElement('div');
+    legend.className = 'legend vertical legend-variable-radius';
+
+    legend.id = 'legend-1';
+    document.body.appendChild(legend);
+
+    // add legend header and content elements
+    var mytitle = document.createElement('div'),
+        legendContent = document.createElement('ul');
+    legendHeader = document.createElement('div');
+    mytitle.textContent = title;
+    mytitle.className = 'legend-title'
+    legendHeader.className = 'legend-header'
+    legendContent.className = 'legend-content'
+    legendHeader.appendChild(mytitle);
+    legend.appendChild(legendHeader);
+    legend.appendChild(legendContent);
+
+    // calculate a legend entries on a Mapbox GL Style Spec property function stops array
+    for (p = 0; p < myRadiusStops.length; p++) {
+        if (!!document.getElementById('legend-radius-points-value-' + p)) {
+            //update the legend if it already exists
+            document.getElementById('legend-radius-points-value-' + p).textContent = myRadiusStops[p][0];
+            document.getElementById('legend-radius-points-id-' + p).style.backgroundColor = color;
+        }
+        else {
+            // create the legend if it doesn't yet exist
+            var item = document.createElement('li');
+            item.className = 'legend-item';
+            item.height = '' + maxLegendItemHeight + 'px';
+
+            var key = document.createElement('span');
+            key.className = 'legend-key circle';
+            key.id = 'legend-radius-points-id-' + p;
+            key.style.backgroundColor = color;   
+
+            key.style.width = '' + myRadiusStops[p][1] * 2 + 'px';
+            key.style.height = '' + myRadiusStops[p][1] * 2 + 'px';
+
+            keyVerticalMargin = (maxLegendItemHeight - myRadiusStops[p][1] * 2) * 0.5;
+            key.style.marginTop = '' + keyVerticalMargin + 'px';
+            key.style.marginBottom = '' + keyVerticalMargin + 'px';
+
+            var value = document.createElement('span');
+            value.className = 'legend-value';
+            value.id = 'legend-radius-points-value-' + p;
+
+            item.appendChild(key);
+            item.appendChild(value);
+            legendContent.appendChild(item);
+            
+            data = document.getElementById('legend-radius-points-value-' + p)
+
+            // round number values in legend if precision defined
+            if ((typeof(myRadiusStops[p][0]) == 'number') && (typeof(null) == 'number')) {
+                data.textContent = myRadiusStops[p][0].toFixed(null);
+            }
+            else {
+                data.textContent = myRadiusStops[p][0];
+            }
+        }
+    }
+
+    // add class for styling bordered legend keys
+    if (true) {
+        var keys = document.getElementsByClassName('legend-key');
+        for (var i=0; i < keys.length; i++) {
+            if (keys[i]) {
+                keys[i].classList.add('bordered');
+            }
+        }
+    }
+
+    // update right-margin for compact Mapbox attribution based on calculated legend width
+    updateAttribMargin(legend);
+    updateLegendMargin(legend);
+
+}
+
+
+function updateAttribMargin(legend) {
+
+    // default margin is based on calculated legend width
+    var attribMargin = legend.offsetWidth + 15;
+    
+    // if horizontal legend layout (multiple legends are stacked vertically)
+    if ('vertical' === 'horizontal') {
+        document.getElementsByClassName('mapboxgl-ctrl-attrib')[0].style.marginRight = (attribMargin).toString() + 'px';
+    }
+    // vertical legend layout means multiple legends are side-by-side
+    else if ('vertical' === 'vertical') {
+        var currentMargin = Number(document.getElementsByClassName('mapboxgl-ctrl-attrib')[0].style.marginRight.replace('px', ''));
+        document.getElementsByClassName('mapboxgl-ctrl-attrib')[0].style.marginRight = (attribMargin + currentMargin).toString() + 'px';
+    }
+}
+
+
+function updateLegendMargin(legend) {
+
+    var verticalLegends = document.getElementsByClassName('legend vertical'),
+        horizontalLegends = document.getElementsByClassName('legend horizontal');
+
+    if (verticalLegends.length > 1) {
+        for (i = 1; i < verticalLegends.length; i++) {
+            verticalLegends[i].style.marginRight = (legend.offsetWidth - 5).toString() + 'px';
+            var legend = verticalLegends[i];
+        }
+    }
+    else if (horizontalLegends.length > 1) {
+        for (i = 1; i < horizontalLegends.length; i++) {
+            horizontalLegends[i].style.marginBottom = (legend.offsetHeight + 15).toString() + 'px';
+            var legend = horizontalLegends[i];
+        }
+    }
+}
+
+
+function generateInterpolateExpression(propertyValue, stops) {
+    var expression;
+    if (propertyValue == 'zoom') {
+        expression = ['interpolate', ['exponential', 1.2], ['zoom']]
+    }
+    else if (propertyValue == 'heatmap-density') {
+        expression = ['interpolate', ['linear'], ['heatmap-density']]
+    }
+    else {
+        expression = ['interpolate', ['linear'], ['get', propertyValue]]
+    }
+
+    for (var i=0; i<stops.length; i++) {
+        expression.push(stops[i][0], stops[i][1])
+    }
+    return expression
+}
+
+
+function generateMatchExpression(propertyValue, stops, defaultValue) {
+    var expression;
+    expression = ['match', ['get', propertyValue]]
+    for (var i=0; i<stops.length; i++) {
+        expression.push(stops[i][0], stops[i][1])
+    }
+    expression.push(defaultValue)
+    
+    return expression
+}
+
+
+function generatePropertyExpression(expressionType, propertyValue, stops, defaultValue) {
+    var expression;
+    if (expressionType == 'match') {
+        expression = generateMatchExpression(propertyValue, stops, defaultValue)
+    }
+    else if (propertyValue == 'identity') {
+        expression = ['get', propertyValue]
+    }
+    else {
+        expression = generateInterpolateExpression(propertyValue, stops)
+    }
+
+    return expression
+}
+
+</script>
+
+<!-- main map creation code, extended by mapboxgl/templates/circle.html -->
+<script type="text/javascript">
+
+    mapboxgl.accessToken = 'pk.eyJ1Ijoicm13aWwiLCJhIjoiY2tzczh5NHdsMHU0bDJua3RnNmNmMTJvaiJ9.t4w9SAMs7OWYAfyjWtpRqw';
+
+    var transformRequest = function(url, resourceType) {
+        const isMapboxRequest = url.slice(8, 22) === 'api.mapbox.com' ||
+          url.slice(10, 26) === 'tiles.mapbox.com';
+      
+        return {
+          url: isMapboxRequest ? url.replace('?', '?pluginName=PythonMapboxgl&') : url
+        }
+    };
+
+    var map = new mapboxgl.Map({
+        container: 'map',
+        attributionControl: false,
+        style: 'mapbox://styles/mapbox/light-v10?optimize=true',
+        center: [-73.97, 40.77],
+        zoom: 12,
+        pitch: 0,
+        bearing: 0,
+        scrollZoom: true,
+        touchZoom: true,
+        doubleClickZoom: true,
+        boxZoom: true,
+        preserveDrawingBuffer: false,
+        transformRequest: transformRequest
+    });
+
+    
+    
+        map.addControl(new mapboxgl.AttributionControl({ compact: true }));
+
+    
+
+    
+
+        map.addControl(new mapboxgl.NavigationControl());
+
+    
+
+    
+
+    
+        
+            calcColorLegend([[1, 'rgb(255,255,204)'], [2, 'rgb(199,233,180)'], [3, 'rgb(127,205,187)'], [4, 'rgb(65,182,196)'], [5, 'rgb(44,127,184)'], [6, 'rgb(37,52,148)']] , "count");
+        
+    
+        
+
+
+    
+        
+        
+
+    
+
+    
+
+    map.on('style.load', function() {
+        
+        
+
+        map.addSource("data", {
+            "type": "geojson",
+            "data": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.986018, 40.77138]}, "properties": {"node": 6791166002.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.944462, 40.769852]}, "properties": {"node": 42424903.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.943832, 40.769349]}, "properties": {"node": 42424905.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.951497, 40.760238]}, "properties": {"node": 42426418.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.907, 40.873463]}, "properties": {"node": 42427923.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.93981, 40.812787]}, "properties": {"node": 42435990.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.973799, 40.726752]}, "properties": {"node": 3624790934.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.931454, 40.800477]}, "properties": {"node": 42438090.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.951403, 40.766745]}, "properties": {"node": 596799891.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.934551, 40.819737]}, "properties": {"node": 42434243.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.014962, 40.718114]}, "properties": {"node": 42431635.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.959436, 40.75782]}, "properties": {"node": 5163687759.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.957927, 40.820413]}, "properties": {"node": 8843765047.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.975644, 40.740576]}, "properties": {"node": 6572026580.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.930762, 40.859394]}, "properties": {"node": 1764387325.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.955814, 40.81709]}, "properties": {"node": 42438224.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.973457, 40.729237]}, "properties": {"node": 5145330172.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.908473, 40.87785]}, "properties": {"node": 42444016.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.993226, 40.772756]}, "properties": {"node": 247123651.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.930791, 40.80229]}, "properties": {"node": 7471942376.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.929484, 40.847569]}, "properties": {"node": 3968944192.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.937077, 40.834139]}, "properties": {"node": 42426665.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.934888, 40.813557]}, "properties": {"node": 371337187.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.961926, 40.81394]}, "properties": {"node": 42441091.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.948659, 40.836464]}, "properties": {"node": 595352911.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.007029, 40.724504]}, "properties": {"node": 42423514.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.98526, 40.710656]}, "properties": {"node": 588455697.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.973107, 40.740302]}, "properties": {"node": 4274141356.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.933404, 40.802701]}, "properties": {"node": 42423203.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.932039, 40.79629]}, "properties": {"node": 6257070519.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.994662, 40.77085]}, "properties": {"node": 61273001.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.002567, 40.756032]}, "properties": {"node": 593915303.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.966769, 40.752503]}, "properties": {"node": 3569749141.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.987475, 40.780182]}, "properties": {"node": 5619144360.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.974784, 40.796174]}, "properties": {"node": 3917296978.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.983861, 40.771285]}, "properties": {"node": 7448738060.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.950378, 40.768841]}, "properties": {"node": 7137586315.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.906657, 40.876749]}, "properties": {"node": 1544782747.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.954212, 40.763858]}, "properties": {"node": 1733612450.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.003045, 40.712372]}, "properties": {"node": 1251908549.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.992079, 40.770604]}, "properties": {"node": 4207865789.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.004906, 40.757016]}, "properties": {"node": 8666573695.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.018139, 40.708786]}, "properties": {"node": 889585049.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.957827, 40.82129]}, "properties": {"node": 2383895311.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.938674, 40.829739]}, "properties": {"node": 589927880.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.929547, 40.847486]}, "properties": {"node": 3968944212.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.986991, 40.780715]}, "properties": {"node": 595245843.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.932459, 40.861035]}, "properties": {"node": 3808464456.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.998558, 40.745325]}, "properties": {"node": 6279091713.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.981756, 40.77867]}, "properties": {"node": 3235708624.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.991151, 40.770666]}, "properties": {"node": 4207854754.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.989317, 40.773185]}, "properties": {"node": 3956129964.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.001548, 40.709604]}, "properties": {"node": 278609934.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.99256, 40.713863]}, "properties": {"node": 3212472798.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.935503, 40.8315]}, "properties": {"node": 5333189421.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.910532, 40.880453]}, "properties": {"node": 42746781.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.932165, 40.78731]}, "properties": {"node": 3037017931.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.907431, 40.876476]}, "properties": {"node": 5871416387.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.91586, 40.86319]}, "properties": {"node": 42431262.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.013801, 40.702168]}, "properties": {"node": 3274291207.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.935673, 40.80944]}, "properties": {"node": 589928020.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.985805, 40.717644]}, "properties": {"node": 3630249566.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.933198, 40.801575]}, "properties": {"node": 7472058123.0, "count": 2.0}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.001474, 40.746553]}, "properties": {"node": 8239225253.0, "count": 2.0}}]},
+            "buffer": 1,
+            "maxzoom": 14,
+            "generateId": true
+        });
+
+        map.addLayer({
+            "id": "label",
+            "source": "data",
+            "type": "symbol",
+            "maxzoom": 24,
+            "minzoom": 0,
+            "layout": {
+                
+                "text-size" : generateInterpolateExpression('zoom', [[0, 8],[22, 3* 8]] ),
+                "text-offset": [0,-1]
+            },
+            "paint": {
+                "text-halo-color": "white",
+                "text-halo-width": generatePropertyExpression('interpolate', 'zoom', [[0,1], [18,5* 1]]),
+                "text-color": ["case",
+                    ["boolean", ["feature-state", "hover"], false], 
+                    "black", 
+                    "#131516"]
+            }
+        }, "waterway-label" )
+        
+        map.addLayer({
+            "id": "circle",
+            "source": "data",
+            "type": "circle",
+            "maxzoom": 24,
+            "minzoom": 0,
+            "paint": {
+                
+                    "circle-color": ["case",
+                        ["boolean", ["feature-state", "hover"], false], 
+                        "black",
+                        generatePropertyExpression("interpolate", "count", [[1, 'rgb(255,255,204)'], [2, 'rgb(199,233,180)'], [3, 'rgb(127,205,187)'], [4, 'rgb(65,182,196)'], [5, 'rgb(44,127,184)'], [6, 'rgb(37,52,148)']], "grey" )],
+                    
+                "circle-radius" : generatePropertyExpression('interpolate', 'zoom', [[0,1], [22,10 * 1]]),
+                "circle-stroke-color": ["case",
+                    ["boolean", ["feature-state", "hover"], false], 
+                    "black", 
+                    "black"],
+                "circle-stroke-width": generatePropertyExpression('interpolate', 'zoom', [[0,0.2], [18,5* 0.2]]),
+                "circle-opacity" : 1,
+                "circle-stroke-opacity" : 1
+            }
+        }, "label");
+        
+        
+
+        // Popups
+        
+            var popupAction = 'mousemove',
+                popupSettings =  {
+                    closeButton: false,
+                    closeOnClick: false
+                };
+        
+
+        // Create a popup
+        var popup = new mapboxgl.Popup(popupSettings);
+
+        
+
+        var hoveredStateId = 0;
+        
+        // Show the popup on mouseover
+        map.on(popupAction, function(e) {
+            
+            var features = map.queryRenderedFeatures(e.point, {layers: ['circle', 'label'] });
+
+            if (features.length > 0) {
+                map.getCanvas().style.cursor = 'pointer';
+                var f = features[0];
+                newHoveredStateId = f.id;
+                if (newHoveredStateId != hoveredStateId) {
+                    map.removeFeatureState({source: 'data', id: hoveredStateId});
+                    hoveredStateId = newHoveredStateId;
+                }
+                map.setFeatureState({source: 'data', id: hoveredStateId}, { hover: true});
+                let popup_html = '<div><li><b>Location</b>: ' + f.geometry.coordinates[0].toPrecision(6) + 
+                    ', ' + f.geometry.coordinates[1].toPrecision(6) + '</li>';
+
+                for (key in f.properties) {
+                    popup_html += '<li><b> ' + key + '</b>: ' + f.properties[key] + ' </li>'
+                }
+
+                popup_html += '</div>'
+                popup.setLngLat(e.lngLat)
+                    .setHTML(popup_html)
+                    .addTo(map);
+            }
+            else {
+                map.getCanvas().style.cursor = '';
+                popup.remove();
+                map.removeFeatureState({source: 'data', id: hoveredStateId});
+            }
+        });
+
+        
+        
+        // Fly to on click
+        map.on('click', 'circle', function(e) {
+            map.easeTo({
+                center: e.features[0].geometry.coordinates
+            });
+        });
+    });
+
+
+
+</script>
+
+<!-- add capability to export map or legend to image file -->
+
+
+</body>
+</html>
