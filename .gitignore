@@ -2,3 +2,4 @@ __pycache__
 *.csv
 GIS_analysis
 .ipynb_checkpoints
+*.bin
