@@ -61,6 +61,21 @@ class Taxi():
         passenger.set_travel_time(current_time - passenger.get_pickup_time())
 
 
+    def get_current_route(self):
+        
+        """
+        Returns the taxi's current route
+        """
+        return self.current_route
+    
+    
+    def set_current_route(self, route):
+        
+        """
+        Sets the taxi's current route
+        """
+        self.current_route.append(route)
+    
 
 class Passenger():
     
