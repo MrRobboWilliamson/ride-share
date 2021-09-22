@@ -75,32 +75,7 @@ Taxis = [Taxi(v,k,init_locs[v]) for v in V]
 CabRank = [[0,v,Taxis[v]] for v in V]
 heapq.heapify(CabRank)
 
-# function to get all of the available taxis
-def get_taxis(t,qos,times):
-    """
-    Based on the node location and the position of the taxis
-    in the cab rank, get the 
-    
-    TODO: consider taxis that will be available after finishing a job. These
-    will be in range when they finish their jobs
-    """
-    # find intersections within range
-    in_range = inters[times+qos<=MaxWait]
-    print("\nget_taxis")
-    print(" - in range intersections:",in_range.shape)
-    
-    # are there any taxis at these locations?
-    # think about how this can be parallelized
-    options = []
-    out_of_range = []
-    for spot in CabRank:
-        if spot[2].loc in in_range:
-            options.append(spot[2])
-            
-    print(" - ", len(options), "taxis in range")
-    return options
-
-def get_rv_graph(requests,times):
+def get_rv_graph(t,requests,times):
     """
     Generates a shareability graph
     
@@ -108,8 +83,45 @@ def get_rv_graph(requests,times):
     - two requests are connected to an empty cab
     """
     
-    pass
+    # create shareable combinations
+    checked = set()
     
+    # this is the initial wait time
+    requests['qos'] = t - requests['time'].values
+    for i,r in requests.iterrows():
+        
+        # get all the combinations where this request is picked up
+        # first
+        node = r['from_node']
+        jts = times[node,:]
+        orequests = requests.drop(i).copy()
+        
+        # assign the origin node and calculate the time
+        # to get from the origin node to the other nodes
+        orequests['onode'] = node
+        orequests['qos'] += jts[orequests['from_node'].values]
+        
+        print(orequests.shape)
+        
+        # remove any that violate the waiting contraint
+        can_wait = orequests[orequests['qos']<MaxWait]
+        
+        # get the best qos
+        best_qos = can_wait['qos'].min()
+        
+        print(can_wait.shape)
+        
+        # now we need to check which available taxis that can satisfy the 
+        # waiting constraint for the orequest
+        # get all of the "in range" intersections
+        in_range = inters[jts+best_qos<=MaxWait]
+        options = [cab[2].loc for cab in CabRank if cab[2].loc in in_range]
+        cab_waits = jts[cab_locs]        
+        print(len(cab_waits))
+        
+        
+        # do a wait time check
+        break
 
 ### Evaluation
 # get requests in 30s chunks
@@ -148,37 +160,18 @@ for d in D:
         
         # these are the 30s windows
         for w,requests in req_byw:
+            # this is the current time
             t = w*delta + delta
-            # for each request get vehicles within the acceptable
-            # wait time, limited by the quality of service (qos)
             
             # TODO: create shareability graph of requests
             # step 1: find vehicals that can satisfy these requests
-            rv_graph = get_taxis(t,qos,jt2me)
-            
-            
-            
-            # for r,row in requests.iterrows():
-            #     # calculate the initial qos - this is from the start
-            #     # of the window to the request time
-            #     qos = t - row['time']                
-                
-            #     # get all of the journey times to this request to calculate
-            #     # the wait time for the taxis
-            #     jt2me = times[:,row['from_node']]
-                
-
-                
-                # break
+            rv_graph = get_rv_graph(t,requests.iloc[:,:3].copy(),times)
             
             break
         
         break
     
     break
-    
-
-
 
 # print(jt.get_hourofday(0,0)[:3,:3])
 
