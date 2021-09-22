@@ -3,6 +3,7 @@
 This is the model
 """
 import numpy as np
+import pandas as pd
 import heapq
 from source_data import JourneyTimes, Requests
 from taxis import Taxi, Passenger
@@ -36,7 +37,7 @@ D = range(nDays)
 # then did a nearest neighbour analysis to get the closest intersection to
 # each request
 # requests that start and end at the same node are also removed
-rdf = Requests(r'datasets',delta).read_requests()
+rdf = Requests(r'datasets',delta,MaxWait).read_requests()
 
 # get drop off locations from the "previous" saturday night
 # to sample taxi locations at the drop off locations
@@ -57,8 +58,20 @@ init_locs = init_locs[:M]
 # these will help us calculate sharability
 # as adding intermediate points will split the journey times
 jt = JourneyTimes(r'datasets/journey_times')
-
-
+def assign_basejt(requests,times):
+    """
+    Assign base journey times to all of the requests
+    """
+    assigned = []
+    for from_node,trips in requests.groupby('from_node'):
+        
+        # get the times
+        jt_out = times[from_node,:]
+        trips['base_jt'] = jt_out[trips['to_node'].values]
+        assigned.append(trips)
+        
+    return pd.concat(assigned).sort_index()
+    
 # need to know what hour day we're in for a given
 # seconds value
 
@@ -81,30 +94,43 @@ def get_rv_graph(t,requests,times):
     
     Which requests and vehicles might be pair-wise shared.
     - two requests are connected to an empty cab
+    - TODO: which cabs will be available
     """
     
     # create shareable combinations
     checked = set()
     
+    print(requests.head())
+    
     # this is the initial wait time
     requests['qos'] = t - requests['time'].values
     for i,r in requests.iterrows():
         
+        # fitler out request that start after the latest pickup
+        # time - and finish before my pickup time
+        shares = requests[requests['time']<=r['latest']].drop(i).copy()
+        
+        print("feasible pick ups", shares.shape)
+        
         # get all the combinations where this request is picked up
         # first
-        node = r['from_node']
-        jts = times[node,:]
-        orequests = requests.drop(i).copy()
+        pre_node = r['from_node']
+        jt2nxt = times[pre_node,:] # times from this request
+        shares = requests.drop(i).copy()
+        
+        # out of the potential shared rides, which ones will
+        # exceed the in journy qos?
+        
         
         # assign the origin node and calculate the time
         # to get from the origin node to the other nodes
-        orequests['onode'] = node
-        orequests['qos'] += jts[orequests['from_node'].values]
+        shares['enroute'] = jt2nxt[shares['from_node'].values]
+        shares['qos'] += jt2nxt[shares['from_node'].values]
         
-        print(orequests.shape)
+        print(shares.shape)
         
         # remove any that violate the waiting contraint
-        can_wait = orequests[orequests['qos']<MaxWait]
+        can_wait = shares[shares['qos']<MaxWait]
         
         # get the best qos
         best_qos = can_wait['qos'].min()
@@ -114,13 +140,25 @@ def get_rv_graph(t,requests,times):
         # now we need to check which available taxis that can satisfy the 
         # waiting constraint for the orequest
         # get all of the "in range" intersections
-        in_range = inters[jts+best_qos<=MaxWait]
-        options = [cab[2].loc for cab in CabRank if cab[2].loc in in_range]
-        cab_waits = jts[cab_locs]        
-        print(len(cab_waits))
+        jt2me = times[:,pre_node] # times to this request
+        in_range = inters[jt2me+best_qos<=MaxWait]
+        candidates = [cab[2] for cab in CabRank if cab[2].loc in in_range]
         
-        
-        # do a wait time check
+        # check which cabs can satisfy the request combinations
+        options = dict()
+        for j,share in can_wait.iterrows():
+            
+            # collect feasible cabs for this trip
+            for cab in candidates:
+                
+                # get the results
+                if share['qos'] + jt2me[cab.loc] <= MaxWait:
+                    
+                    # these are the options for this request to pickup
+                    options[(i,j,cab.taxi_id)] = share['qos'] + jt2me[cab.loc]
+                    
+        # now focussing on the 
+             
         break
 
 ### Evaluation
@@ -154,8 +192,9 @@ for d in D:
         # get the journey times matrix
         times = jt.get_hourofday(dt,h)
         
-        # get all of the requests
-        req_slice = rdf[(rdf['day']==d)&(rdf['hour']==h)]
+        # get all of the requests - we might want to preprocess these?
+        req_slice = assign_basejt(rdf[(rdf['day']==d)&(rdf['hour']==h)],
+                                  times)
         req_byw = req_slice.groupby('window')
         
         # these are the 30s windows
@@ -165,7 +204,7 @@ for d in D:
             
             # TODO: create shareability graph of requests
             # step 1: find vehicals that can satisfy these requests
-            rv_graph = get_rv_graph(t,requests.iloc[:,:3].copy(),times)
+            rv_graph = get_rv_graph(t,requests.iloc[:,[0,1,2,-2,-1]].copy(),times)
             
             break
         

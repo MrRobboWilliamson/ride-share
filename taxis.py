@@ -21,6 +21,9 @@ class Taxi():
         self.current_route = []
         self.loc = init_loc
         
+        # fields for checking for availability
+        self.available = True
+        self.next_available = None        
            
     def get_id(self):
         
@@ -48,6 +51,7 @@ class Taxi():
         passenger.set_status(2)
         passenger.set_pickup_time(current_time)
         passenger.set_wait_time(current_time - passenger.get_req_time())
+        
                 
         
     def drop_off_passenger(self, passenger, current_time):
@@ -76,6 +80,13 @@ class Taxi():
         Sets the taxi's current route
         """
         self.current_route.append(route)
+        
+    def toggle_availability(self):
+        """
+        toggles availability status
+        """
+        self.available = not(self.available)
+        
         
     def __repr__(self):
         

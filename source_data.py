@@ -69,9 +69,10 @@ class Requests():
     window size is in seconds
     """
     
-    def __init__(self,root,window_size):
+    def __init__(self,root,window_size,max_wait):
         self.root = root
         self.delta = window_size
+        self.max_wait = max_wait
     
     def read_requests(self):
         
@@ -81,5 +82,6 @@ class Requests():
         # what hour and day are we in?
         df['day'] = np.floor(df['time']/(24*3600)).astype(int)
         df['hour'] = np.floor(df['time']/3600).astype(int) % 24
+        df['latest'] = df['time'] + self.max_wait
         
         return df
