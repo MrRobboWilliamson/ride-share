@@ -12,13 +12,14 @@ class Taxi():
     Creates a taxi for our simulation
     """
     
-    def __init__(self, taxi_id, max_capacity):
+    def __init__(self, taxi_id, max_capacity,init_loc):
         
         # create variables
         self.taxi_id = taxi_id
         self.max_capacity = max_capacity
         self.passengers = []
         self.current_route = []
+        self.loc = init_loc
         
            
     def get_id(self):
@@ -75,6 +76,10 @@ class Taxi():
         Sets the taxi's current route
         """
         self.current_route.append(route)
+        
+    def __repr__(self):
+        
+        return f"<Id: T{self.taxi_id}, Loc: {self.loc}>"
     
 
 class Passenger():
@@ -228,9 +233,9 @@ class Passenger():
         """
         self.travel_time = time
         
-
-t1 = Taxi(1,2)
-t2 = Taxi(2,2)
-p1 = Passenger(1, 3, 9, 0, 650, 5)
-p3 = Passenger(2, 6, 10, 0, 651, 10)
-p4 = Passenger(3, 8, 3, 0, 652, 32)
+if __name__ == "__main__":
+    t1 = Taxi(1,2)
+    t2 = Taxi(2,2)
+    p1 = Passenger(1, 3, 9, 0, 650, 5)
+    p3 = Passenger(2, 6, 10, 0, 651, 10)
+    p4 = Passenger(3, 8, 3, 0, 652, 32)

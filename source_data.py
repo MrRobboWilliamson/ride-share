@@ -76,6 +76,10 @@ class Requests():
     def read_requests(self):
         
         df = pd.read_csv(os.path.join(self.root,'ride_requests.csv'))
-        df['window'] = np.floor(df['time'] / self.delta).astype(int)        
+        df['window'] = np.floor(df['time']/self.delta).astype(int)
+        
+        # what hour and day are we in?
+        df['day'] = np.floor(df['time']/(24*3600)).astype(int)
+        df['hour'] = np.floor(df['time']/3600).astype(int) % 24
         
         return df
