@@ -66,16 +66,16 @@ class Requests():
     
     """
     Read in the request data
+    window size is in seconds
     """
     
-    def __init__(self,root):
+    def __init__(self,root,window_size):
         self.root = root
+        self.delta = window_size
     
     def read_requests(self):
         
-        return pd.read_csv(os.path.join(self.root,'ride_requests.csv'))
-    
-# variable to read journey times on demand
-reqs = Requests(r'datasets').read_requests()
-jt = JourneyTimes(r'datasets/journey_times')
-
+        df = pd.read_csv(os.path.join(self.root,'ride_requests.csv'))
+        df['window'] = np.floor(df['time'] / self.delta).astype(int)        
+        
+        return df
