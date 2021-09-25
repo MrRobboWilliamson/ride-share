@@ -131,33 +131,88 @@ def show_viz(t,requests,r=None,times=None):
     plt.ylim([-1,requests.shape[0]+1])
     plt.legend()
     plt.show()
+    
+def shortest_path(leg,pair,path,times):
+    """
+    recursively find the shortest path between two requests by 
+    minimizing waiting and in journey delays
+    
+    some helpful information:
+        - second pickup incurs a wait delay
+        - but first pickup incurs a journey time delay
+        - second drop incurs a journey time delay
+    
+    keep track of the cost to each request
+    """    
+    
+    if leg > 1:        
+        # assign the final leg
+        final = [p[1] for p in pair if p[1] not in path]
+        
+        # return the journey time of the final leg
+        path.append(final)
+        return times[path[-2],path[-1]],path
+    
+    best_path = 99999,False
+    for i in range(2):      
+        if leg == 0:
+            
+            first = pair[i]
+            path.append(first.pickup_node)
+            first.wait_time = 0            
+            
+            second = pair[(i+1)%2]            
+            path.append(second.pickup_node)            
+            
+            cost = times[first,second]
+            second.wait_time += cost
+            
+            print("\nfirst cost",cost)
+            
+            # assign a massive cost
+            if cost > MaxWait:
+                cost = float('inf')
+        else:
+            next_ = pair[i][leg]
+            cost = times[path[-1],next_]
+            path.append(next_)
+            
+            print(f"next_{leg} cost", cost)
+        
+        jt = cost + shortest_path(leg+1,pair,path,times)[0]
+        
+        if jt < best_path[0]:
+            best_path = jt,path
+        
+    return best_path
 
 def build_shareable(t,requests,times,request_edges,to_check,visualise=False):
-    
-    if not to_check:
-        print('Done')
-        return request_edges
-    
-    # pop a request off the list
-    r = to_check.pop(0)
-    
-    # search for shareble combos
-    this_request = requests.loc[r]
-    # for other in requests.index:
         
-        # total_delay = 0
+    checked = set()    
+    for r1,row requests.iterrows(): 
+        # pop a request off the list
+        r1 = to_check.pop(to_check.index(r1))
+        t1,o1,d1,ltp1,bjt1,qos1 = requests.loc[r1].values
+        p1 = Passenger(r1,o1,d1,t1,bjt1,qos1)
         
-        fig,ax = plt.subplots()
-        min_t = requests['time'].min() - 60
-        max_t = requests['time'].max() + 60
-        
-        
-        # to_check
-    
-    
-    
-    # return build_shareble(requests,times,request_edges,checked)
-
+        for r2 in to_check:
+            
+            t2,o2,d2,ltp2,bjt2,qos2 = requests.loc[r2].values            
+            p2 = Passenger(r2,o2,d2,t2,bjt2,qos2)
+            
+            # get the shortest path to satisfy each request
+            path = []
+            pair = [p1,p2]
+            best = shortest_path(0,pair,path,times)
+            
+            if best[1]:
+                
+                
+                print(best)
+                request_edges[(r1,r2)] = best
+                
+                break
+            
 
 def get_rv_graph(t,requests,times,visualize=False):
     """
@@ -177,7 +232,7 @@ def get_rv_graph(t,requests,times,visualize=False):
         
     # get the request edges
     to_check = list(requests.index.values)
-    request_edges = build_shareable(requests.copy(),times,request_edges,to_check)
+    request_edges = build_shareable(t,requests,times,request_edges,to_check)
     
     for v in Taxis:
         
@@ -209,62 +264,7 @@ def get_rv_graph(t,requests,times,visualize=False):
             
             
             break
-            
-        
-        # # fitler out request that start after the latest pickup
-        # # time - and finish before my pickup time
-        # shares = requests[requests['time']<=r['latest_pickup']].drop(i).copy()
-        
-        # print("feasible pick ups", shares.shape)
-        
-        # # get all the combinations where this request is picked up
-        # # first
-        # pre_node = r['from_node']
-        # jt2nxt = times[pre_node,:] # times from this request
-        # shares = requests.drop(i).copy()
-        
-        # # out of the potential shared rides, which ones will
-        # # exceed the in journy qos?
-        
-        
-        # # assign the origin node and calculate the time
-        # # to get from the origin node to the other nodes
-        # shares['enroute'] = jt2nxt[shares['from_node'].values]
-        # shares['qos'] += jt2nxt[shares['from_node'].values]
-        
-        # print(shares.shape)
-        
-        # # remove any that violate the waiting contraint
-        # can_wait = shares[shares['qos']<MaxWait]
-        
-        # # get the best qos
-        # best_qos = can_wait['qos'].min()
-        
-        # print(can_wait.shape)
-        
-        # # now we need to check which available taxis that can satisfy the 
-        # # waiting constraint for the orequest
-        # # get all of the "in range" intersections
-        # jt2me = times[:,pre_node] # times to this request
-        # in_range = inters[jt2me+best_qos<=MaxWait]
-        # candidates = [cab[2] for cab in CabRank if cab[2].loc in in_range]
-        
-        # # check which cabs can satisfy the request combinations
-        # options = dict()
-        # for j,share in can_wait.iterrows():
-            
-        #     # collect feasible cabs for this trip
-        #     for cab in candidates:
-                
-        #         # get the results
-        #         if share['qos'] + jt2me[cab.loc] <= MaxWait:
-                    
-        #             # these are the options for this request to pickup
-        #             options[(i,j,cab.taxi_id)] = share['qos'] + jt2me[cab.loc]
-                    
-        # # now focussing on the 
-             
-        # break
+         
 
 ### Evaluation
 # get requests in 30s chunks

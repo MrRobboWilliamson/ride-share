@@ -99,22 +99,21 @@ class Passenger():
     Creates a passenger for our simulation
     """
     
-    def __init__(self, req_id, pickup_node, drop_off_node, 
-                 req_day, req_time, expected_duration):
+    def __init__(self, req_id, pickup_node, drop_off_node, req_time, base_jt,
+                 init_wait):
         
         # create variables
         self.req_id = req_id
         self.pickup_node = pickup_node
         self.drop_off_node = drop_off_node
-        self.req_day = req_day
+        # self.req_day = req_day
         self.req_time = req_time
-        self.expected_duration = expected_duration
+        self.base_jt = base_jt
         self.status = 0
         self.pickup_time = -1
         self.drop_off_time = -1
-        self.wait_time = -1
-        self.travel_time = -1
-
+        self.wait_time = 0
+        self.travel_time = 0
      
         
     def get_id(self):
@@ -124,6 +123,11 @@ class Passenger():
         """
         return self.req_id
     
+    def get_total_delay(self):
+        return self.wait_time + self.get_travel_delay()
+    
+    def get_travel_delay(self):        
+        return max(0,self.travel_time - self.base_jt)
  
     def get_pickup_node(self):
         
@@ -243,6 +247,7 @@ class Passenger():
         Sets the passenger's travel time
         """
         self.travel_time = time
+        
         
 if __name__ == "__main__":
     t1 = Taxi(1,2)
