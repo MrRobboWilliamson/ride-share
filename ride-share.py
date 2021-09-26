@@ -138,80 +138,112 @@ def shortest_path(leg,pair,path,times):
     minimizing waiting and in journey delays
     
     some helpful information:
-        - second pickup incurs a wait delay
-        - but first pickup incurs a journey time delay
-        - second drop incurs a journey time delay
-    
-    keep track of the cost to each request
+        - only second pickup incurs an additional wait delay
+        - when deciding who to drop first, 
+            - if first drop, picked up second - only the last dropped gets jt delays
+            - other wise they both do
     """    
     
     if leg > 1:        
-        # assign the final leg
-        final = [p[1] for p in pair if p[1] not in path]
-        
-        # return the journey time of the final leg
-        path.append(final)
-        return times[path[-2],path[-1]],path
+        return 0,path
     
     best_path = 99999,False
-    for i in range(2):      
+    for r in pair:
         if leg == 0:
+            # get the first node
+            first = pair[r]['route'][leg]
+            path.append((r,first))
             
-            first = pair[i]
-            path.append(first.pickup_node)
-            first.wait_time = 0            
+            # get the second node in the journey
+            other = pair[r]['other']
+            second = pair[other]['route'][leg]
+            path.append((other,second))
             
-            second = pair[(i+1)%2]            
-            path.append(second.pickup_node)            
+            # add the initial wait time and check against the MaxWait constraint
+            cost = times[first,second] + pair[other]['wait']
             
-            cost = times[first,second]
-            second.wait_time += cost
-            
-            print("\nfirst cost",cost)
-            
-            # assign a massive cost
+            # assign a massive cost if we exceed the wait time
+            # on the other request
             if cost > MaxWait:
                 cost = float('inf')
+                
+            # now we can add in the first guy's initial wait cost
+            ocost = pair[r]['wait']
+                        
         else:
-            next_ = pair[i][leg]
-            cost = times[path[-1],next_]
-            path.append(next_)
+            # get the next node and the journey time
+            next_ = pair[r]['route'][leg]
+            path.append((r,next_))
             
-            print(f"next_{leg} cost", cost)
-        
-        jt = cost + shortest_path(leg+1,pair,path,times)[0]
+            # get the other request and the last node - which
+            # will be the other request's destination
+            other = pair[r]['other']
+            last = pair[other]['route'][1]
+            
+            # if this next node is owned by the same request as the last, there
+            # will be no journey time delay
+            if r == path[-1][0]:
+                # so we can calculate the journey time delay on the other
+                # request
+                cost = times[path[0][1],path[1][1]] + \
+                    times[path[1][1],next_] + \
+                        times[next_,last] - \
+                            pair[other]['base']
+                            
+                # update the path            
+                path.append((other,last))
+                ocost = 0                           
+            else:
+                # we have to calculate the journey time costs against both
+                # routes
+                jt0 = times[path[0][1],path[1][1]]
+                jt1 = times[path[1][1],next_]
+                jt2 = times[next_,last]
+                
+                # update the path and costs
+                path.append((other,last))
+                cost = jt0 + jt1 - pair[r]['base']
+                ocost = jt1 + jt2 - pair[other]['base']
+            
+            # here we need to check the overall delay constraints
+            if cost > MaxWait or ocost > MaxWait:
+                cost = float('inf')
+            
+        jt = cost + ocost + shortest_path(leg+1,pair,path,times)[0]
         
         if jt < best_path[0]:
             best_path = jt,path
         
     return best_path
 
-def build_shareable(t,requests,times,request_edges,to_check,visualise=False):
+
+def build_shareable(t,requests,times,request_edges,to_check,visualise=False):        
+    
+    for r1,row in requests.iterrows(): 
         
-    checked = set()    
-    for r1,row requests.iterrows(): 
-        # pop a request off the list
+        # pop this request off the list
         r1 = to_check.pop(to_check.index(r1))
         t1,o1,d1,ltp1,bjt1,qos1 = requests.loc[r1].values
-        p1 = Passenger(r1,o1,d1,t1,bjt1,qos1)
+        # p1 = Passenger(r1,o1,d1,t1,bjt1,qos1)
         
         for r2 in to_check:
             
             t2,o2,d2,ltp2,bjt2,qos2 = requests.loc[r2].values            
-            p2 = Passenger(r2,o2,d2,t2,bjt2,qos2)
+            # p2 = Passenger(r2,o2,d2,t2,bjt2,qos2)
             
             # get the shortest path to satisfy each request
             path = []
-            pair = [p1,p2]
+            pair = dict([(r1,dict(route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
+                         (r2,dict(route=(o2,d2),other=r1,wait=qos2,base=bjt2))])
+            
+            # initiate the costs by removing the journey times
+            initial_costs = 0
             best = shortest_path(0,pair,path,times)
             
             if best[1]:
-                
-                
                 print(best)
-                request_edges[(r1,r2)] = best
-                
-                break
+                request_edges[(r1,r2)] = best    
+                break           
             
 
 def get_rv_graph(t,requests,times,visualize=False):
@@ -224,7 +256,7 @@ def get_rv_graph(t,requests,times,visualize=False):
     """
     
     # create shareable combinations
-    request_edges = dict() # key (r1,r2) value sum of delays
+    request_edges = dict() # key frozenset(r1,r2) value sum of delays
     vehicle_edges = dict() # key (r,v) value 
     
     # this is the initial wait time
@@ -257,7 +289,7 @@ def get_rv_graph(t,requests,times,visualize=False):
                     
                 # assign edges and record solo trib
                 vehicle_edges[(r,v)] = total_delay
-                request_edges[(r,r)] = total_delay
+                request_edges[frozenset((r,r))] = total_delay
                 
                 # skip to the next cab
                 continue
