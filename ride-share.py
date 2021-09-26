@@ -78,10 +78,8 @@ Taxis = { v: Taxi(v,k,init_locs[v]) for v in V }
     
 def build_shareable(t,requests,times,rv_graph,to_check,visualise=False):        
     """
-    Searches each pair of requests for the shortest path
-    between them
-    - there is probably a better way
-    - this function kills performance.    
+    Searches each feasible pair of requests for the shortest path
+    between them  
     """
     
     orequests = requests.copy()
@@ -94,8 +92,8 @@ def build_shareable(t,requests,times,rv_graph,to_check,visualise=False):
         jt12 = times[o1,:]
         jt21 = times[:,o1]
         to_check = orequests[
-            (jt12[orequests['from_node']]+orequests['qos']<MaxWait) |
-            (jt21[orequests['from_node']]+qos1<MaxWait)
+            (jt12[orequests['from_node']]+orequests['qos']<=MaxWait) |
+            (jt21[orequests['from_node']]+qos1<=MaxWait)
             ]
                 
         for r2,t2,o2,d2,ltp2,bjt2,qos2,_ in to_check.to_records():
@@ -140,8 +138,7 @@ def update_rv(t,requests,times,rv_graph,visualize=False):
     Step 2:
         - check which vehicles can be assigned to which requests
         - need to be able to assign requests to cabs with one availabe
-          seat en route
-    
+          seat en route    
     """
         
     # this is the initial wait time
