@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from source_data import JourneyTimes, Requests
 from taxis import Taxi, Passenger
-np.random.seed(1234)
+np.random.seed(16)
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -85,50 +85,65 @@ def assign_basejt(requests,times):
 # I suggest we inject them at randomly sampled drop off points
 Taxis = { v: Taxi(v,k,init_locs[v]) for v in V }
 
-def show_viz(t,requests,r=None,times=None):
+def show_viz(t,requests,r=None):
     
+    colors = ['tab:blue']*requests.shape[0]
+    
+    if r is not None:
+        # update the color of the request in focus
+        colors[list(requests.index).index(r)] = 'tab:orange'
+        
     wait_style = dict(
-        alpha=0.5,label="wait"
+        alpha=0.5,label="wait",colors=colors
         )
     journey_style = dict(
-        label="journey"
+        label="journey",colors=colors
         )
     delay_style = dict(
-        alpha=0.5,label="delay"
+        alpha=0.5,label="delay",colors=colors
         )
+    
+    print(colors)
     
     # precalc times
     base_late = requests['latest_pickup'] + requests['base_jt']
     latest_dropoff = base_late + MaxWait    
 
     # create the plot    
-    fig,ax = plt.subplots(figsize=(15,30))
-    min_t = requests['time'].min() - 60
-    max_t = latest_dropoff.max() + 60
+    fig,ax = plt.subplots(figsize=(15,max(2,int(requests.shape[0]/5))))
+    min_t = requests['time'].min() - MaxWait
+    max_t = latest_dropoff.max() + MaxWait
     
     # plot the current time
     plt.vlines(t,-1,requests.shape[0]+1,ls=":",colors="black")
     
     # plot the wait times
-    plt.hlines(requests.index,
+    y_positions = list(range(requests.shape[0]))
+    plt.hlines(y_positions,
                requests['time'],
                requests['latest_pickup'],
                **wait_style)
     
     # plot the journey times
-    plt.hlines(requests.index,
+    plt.hlines(y_positions,
                requests['latest_pickup'],
                base_late,
                **journey_style)
     
     # plot the delay times
-    plt.hlines(requests.index,
+    plt.hlines(y_positions,
                base_late,
                latest_dropoff,
                **delay_style)
     
     plt.xlim([min_t,max_t])
-    plt.ylim([-1,requests.shape[0]+1])
+    plt.ylim([-1,requests.shape[0]])
+    
+    # lable the requests
+    ylabels = [None,] + list(requests.index) + [None,]
+    yticks = [-1,] + y_positions + [y_positions[-1]+1,]
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(ylabels)
     plt.legend()
     plt.show()
     
@@ -221,19 +236,17 @@ def shortest_path(leg,pair,path,times):
     return best_path
 
 
-def build_shareable(t,requests,times,request_edges,to_check,visualise=False):        
+def build_shareable(t,requests,times,rv_graph,to_check,visualise=False):        
     
     for r1,row in requests.iterrows(): 
         
         # pop this request off the list
         r1 = to_check.pop(to_check.index(r1))
         t1,o1,d1,ltp1,bjt1,qos1 = requests.loc[r1].values
-        # p1 = Passenger(r1,o1,d1,t1,bjt1,qos1)
         
         for r2 in to_check:
             
-            t2,o2,d2,ltp2,bjt2,qos2 = requests.loc[r2].values            
-            # p2 = Passenger(r2,o2,d2,t2,bjt2,qos2)
+            t2,o2,d2,ltp2,bjt2,qos2 = requests.loc[r2].values        
             
             # get the shortest path to satisfy a pair of requests
             pair = dict([(r1,dict(route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
@@ -241,30 +254,42 @@ def build_shareable(t,requests,times,request_edges,to_check,visualise=False):
             best = shortest_path(0,pair,None,times)
             
             if best[1]:
-                print(best)
-                request_edges[(r1,r2)] = best    
-                break           
-            
+                rv_graph['rr'][frozenset((r1,r2))] = best                
 
-def get_rv_graph(t,requests,times,visualize=False):
+def update_rv(t,requests,times,rv_graph,visualize=False):
     """
-    Generates a shareability graph
+    Updates the RV graph
     
-    Which foreach vehicle, generates a graph of pair-wise shareable requests
-    - two requests are connected to an empty cab if the total travel
-      delays experienced by either request are satisfied
+    Step 1:
+        - update the pairwise shareability graph
+        
+    Step 2:
+        - check which vehicles can be assigned to which requests
+        - need to be able to assign requests to cabs with one availabe
+          seat en route
+    
     """
-    
-    # create shareable combinations
-    request_edges = dict() # key frozenset(r1,r2) value sum of delays
-    vehicle_edges = dict() # key (r,v) value 
-    
+        
     # this is the initial wait time
     requests['qos'] = t - requests['time'].values
         
     # get the request edges
     to_check = list(requests.index.values)
-    request_edges = build_shareable(t,requests,times,request_edges,to_check)
+    build_shareable(t,requests,times,rv_graph,to_check)
+    
+    if visualize:
+        # randomly get a request that is shareable
+        r = list(np.random.choice(list(rv_graph['rr'].keys())))[0]
+        
+        # get all of the other requests
+        to_plot = set()
+        for pair in rv_graph['rr']:
+            if r in pair:
+                to_plot |= pair 
+                
+        print(r,to_plot)
+        print(requests[requests.index.isin(to_plot)])
+        show_viz(t,requests[requests.index.isin(to_plot)],r)
     
     for v in Taxis:
         
@@ -316,6 +341,7 @@ def get_rv_graph(t,requests,times,visualize=False):
 
 # Cycle in hour chunks, so we don't have to check to load
 # new journey times each iteration we only load them on the hour
+rv_graph = dict(rr=dict(),rv=dict())
 for d in D:
     
     # convert to sun, weekday, sat
@@ -338,8 +364,8 @@ for d in D:
             
             # TODO: create shareability graph of requests
             # step 1: find vehicals that can satisfy these requests
-            rv_graph = get_rv_graph(t,requests.iloc[:,[0,1,2,-2,-1]].copy(),
-                                    times,visualize=False)
+            rv_graph = update_rv(t,requests.iloc[:,[0,1,2,-2,-1]].copy(),
+                                    times,rv_graph,visualize=False)
             
             break
         
