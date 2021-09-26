@@ -149,7 +149,10 @@ def shortest_path(leg,pair,path,times):
     
     best_path = 99999,False
     for r in pair:
-        if leg == 0:
+        if leg == 0:            
+            # init the path
+            path = []
+            
             # get the first node
             first = pair[r]['route'][leg]
             path.append((r,first))
@@ -209,6 +212,7 @@ def shortest_path(leg,pair,path,times):
             if cost > MaxWait or ocost > MaxWait:
                 cost = float('inf')
             
+        path = list(path)
         jt = cost + ocost + shortest_path(leg+1,pair,path,times)[0]
         
         if jt < best_path[0]:
@@ -231,14 +235,10 @@ def build_shareable(t,requests,times,request_edges,to_check,visualise=False):
             t2,o2,d2,ltp2,bjt2,qos2 = requests.loc[r2].values            
             # p2 = Passenger(r2,o2,d2,t2,bjt2,qos2)
             
-            # get the shortest path to satisfy each request
-            path = []
+            # get the shortest path to satisfy a pair of requests
             pair = dict([(r1,dict(route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
                          (r2,dict(route=(o2,d2),other=r1,wait=qos2,base=bjt2))])
-            
-            # initiate the costs by removing the journey times
-            initial_costs = 0
-            best = shortest_path(0,pair,path,times)
+            best = shortest_path(0,pair,None,times)
             
             if best[1]:
                 print(best)
