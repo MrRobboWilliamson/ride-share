@@ -4,12 +4,16 @@ This is the model
 """
 import numpy as np
 import pandas as pd
-from source_data import JourneyTimes, Requests
-from taxis import Taxi, Passenger
-np.random.seed(16)
-
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+import time
+
+# our modules
+from source_data import JourneyTimes, Requests
+from taxis import Taxi, Passenger
+from utils import assign_basejt, plot_requests, shortest_path
+
+np.random.seed(16)
 
 # Shareability parameters
 # vehicle capacity (k) and quality of service threshold (delta)
@@ -61,19 +65,6 @@ init_locs = init_locs[:M]
 # these will help us calculate sharability
 # as adding intermediate points will split the journey times
 jt = JourneyTimes(r'datasets/journey_times')
-def assign_basejt(requests,times):
-    """
-    Assign base journey times to all of the requests
-    """
-    assigned = []
-    for from_node,trips in requests.groupby('from_node'):
-        
-        # get the times
-        jt_out = times[from_node,:]
-        trips['base_jt'] = jt_out[trips['to_node'].values]
-        assigned.append(trips)
-        
-    return pd.concat(assigned).sort_index()
     
 # need to know what hour day we're in for a given
 # seconds value
@@ -84,177 +75,60 @@ def assign_basejt(requests,times):
 # it should be in one of the python files on Blackboard
 # I suggest we inject them at randomly sampled drop off points
 Taxis = { v: Taxi(v,k,init_locs[v]) for v in V }
-
-def show_viz(t,requests,r=None):
     
-    colors = ['tab:blue']*requests.shape[0]
-    
-    if r is not None:
-        # update the color of the request in focus
-        colors[list(requests.index).index(r)] = 'tab:orange'
-        
-    wait_style = dict(
-        alpha=0.5,label="wait",colors=colors
-        )
-    journey_style = dict(
-        label="journey",colors=colors
-        )
-    delay_style = dict(
-        alpha=0.5,label="delay",colors=colors
-        )
-    
-    print(colors)
-    
-    # precalc times
-    base_late = requests['latest_pickup'] + requests['base_jt']
-    latest_dropoff = base_late + MaxWait    
-
-    # create the plot    
-    fig,ax = plt.subplots(figsize=(15,max(2,int(requests.shape[0]/5))))
-    min_t = requests['time'].min() - MaxWait
-    max_t = latest_dropoff.max() + MaxWait
-    
-    # plot the current time
-    plt.vlines(t,-1,requests.shape[0]+1,ls=":",colors="black")
-    
-    # plot the wait times
-    y_positions = list(range(requests.shape[0]))
-    plt.hlines(y_positions,
-               requests['time'],
-               requests['latest_pickup'],
-               **wait_style)
-    
-    # plot the journey times
-    plt.hlines(y_positions,
-               requests['latest_pickup'],
-               base_late,
-               **journey_style)
-    
-    # plot the delay times
-    plt.hlines(y_positions,
-               base_late,
-               latest_dropoff,
-               **delay_style)
-    
-    plt.xlim([min_t,max_t])
-    plt.ylim([-1,requests.shape[0]])
-    
-    # lable the requests
-    ylabels = [None,] + list(requests.index) + [None,]
-    yticks = [-1,] + y_positions + [y_positions[-1]+1,]
-    ax.set_yticks(yticks)
-    ax.set_yticklabels(ylabels)
-    plt.legend()
-    plt.show()
-    
-def shortest_path(leg,pair,path,times):
-    """
-    recursively find the shortest path between two requests by 
-    minimizing waiting and in journey delays
-    
-    some helpful information:
-        - only second pickup incurs an additional wait delay
-        - when deciding who to drop first, 
-            - if first drop, picked up second - only the last dropped gets jt delays
-            - other wise they both do
-    """    
-    
-    if leg > 1:        
-        return 0,path
-    
-    best_path = 99999,False
-    for r in pair:
-        if leg == 0:            
-            # init the path
-            path = []
-            
-            # get the first node
-            first = pair[r]['route'][leg]
-            path.append((r,first))
-            
-            # get the second node in the journey
-            other = pair[r]['other']
-            second = pair[other]['route'][leg]
-            path.append((other,second))
-            
-            # add the initial wait time and check against the MaxWait constraint
-            cost = times[first,second] + pair[other]['wait']
-            
-            # assign a massive cost if we exceed the wait time
-            # on the other request
-            if cost > MaxWait:
-                cost = float('inf')
-                
-            # now we can add in the first guy's initial wait cost
-            ocost = pair[r]['wait']
-                        
-        else:
-            # get the next node and the journey time
-            next_ = pair[r]['route'][leg]
-            path.append((r,next_))
-            
-            # get the other request and the last node - which
-            # will be the other request's destination
-            other = pair[r]['other']
-            last = pair[other]['route'][1]
-            
-            # if this next node is owned by the same request as the last, there
-            # will be no journey time delay
-            if r == path[-1][0]:
-                # so we can calculate the journey time delay on the other
-                # request
-                cost = times[path[0][1],path[1][1]] + \
-                    times[path[1][1],next_] + \
-                        times[next_,last] - \
-                            pair[other]['base']
-                            
-                # update the path            
-                path.append((other,last))
-                ocost = 0                           
-            else:
-                # we have to calculate the journey time costs against both
-                # routes
-                jt0 = times[path[0][1],path[1][1]]
-                jt1 = times[path[1][1],next_]
-                jt2 = times[next_,last]
-                
-                # update the path and costs
-                path.append((other,last))
-                cost = jt0 + jt1 - pair[r]['base']
-                ocost = jt1 + jt2 - pair[other]['base']
-            
-            # here we need to check the overall delay constraints
-            if cost > MaxWait or ocost > MaxWait:
-                cost = float('inf')
-            
-        path = list(path)
-        jt = cost + ocost + shortest_path(leg+1,pair,path,times)[0]
-        
-        if jt < best_path[0]:
-            best_path = jt,path
-        
-    return best_path
-
-
 def build_shareable(t,requests,times,rv_graph,to_check,visualise=False):        
+    """
+    Searches each pair of requests for the shortest path
+    between them
+    - there is probably a better way
+    - this function kills performance.    
+    """
     
-    for r1,row in requests.iterrows(): 
+    orequests = requests.copy()
+    for r1,t1,o1,d1,ltp1,bjt1,qos1,_ in requests.to_records():         
         
         # pop this request off the list
-        r1 = to_check.pop(to_check.index(r1))
-        t1,o1,d1,ltp1,bjt1,qos1 = requests.loc[r1].values
+        orequests = orequests.drop(r1)
         
-        for r2 in to_check:
-            
-            t2,o2,d2,ltp2,bjt2,qos2 = requests.loc[r2].values        
+        # only check feasible trips
+        jt12 = times[o1,:]
+        jt21 = times[:,o1]
+        to_check = orequests[
+            (jt12[orequests['from_node']]+orequests['qos']<MaxWait) |
+            (jt21[orequests['from_node']]+qos1<MaxWait)
+            ]
+                
+        for r2,t2,o2,d2,ltp2,bjt2,qos2,_ in to_check.to_records():
             
             # get the shortest path to satisfy a pair of requests
             pair = dict([(r1,dict(route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
                          (r2,dict(route=(o2,d2),other=r1,wait=qos2,base=bjt2))])
-            best = shortest_path(0,pair,None,times)
             
-            if best[1]:
-                rv_graph['rr'][frozenset((r1,r2))] = best                
+            # only assess once
+            pair_key = tuple(sorted([r1,r2]))
+            if pair_key not in rv_graph[r'rr']:
+                cost,path = shortest_path(0,pair,None,times,MaxWait)
+            
+                if path:             
+                    # the key of the 'rr' graph is in the order of the 
+                    # best to pickup first     
+                    rv_graph['rr'][pair_key] = [cost,path]
+                    
+                    # update requests df if there is a match
+                    requests.loc[r1,'is_alone'] = False
+                    requests.loc[r2,'is_alone'] = False
+            else:
+                # update requests df if there is a match
+                requests.loc[r1,'is_alone'] = False
+                requests.loc[r2,'is_alone'] = False
+                
+                # if we've already assessed this pair
+                # we just need to update the costs with the 
+                # additional waiting time
+                rv_graph['rr'][pair_key][0] += 2*delta
+                
+    return requests
+            
 
 def update_rv(t,requests,times,rv_graph,visualize=False):
     """
@@ -272,10 +146,16 @@ def update_rv(t,requests,times,rv_graph,visualize=False):
         
     # this is the initial wait time
     requests['qos'] = t - requests['time'].values
-        
-    # get the request edges
+    requests['is_alone'] = True
+
+    # get the request edges - might want to return "unshareables"
     to_check = list(requests.index.values)
-    build_shareable(t,requests,times,rv_graph,to_check)
+    
+    # returns a mask of the lonely requests
+    start = time.process_time()    
+    requests = build_shareable(t,requests,times,rv_graph,to_check)
+    end = time.process_time()
+    print(f"  - build_shareable function {end-start:0.1f}s")
     
     if visualize:
         # randomly get a request that is shareable
@@ -289,39 +169,34 @@ def update_rv(t,requests,times,rv_graph,visualize=False):
                 
         print(r,to_plot)
         print(requests[requests.index.isin(to_plot)])
-        show_viz(t,requests[requests.index.isin(to_plot)],r)
+        plot_requests(t,requests[requests.index.isin(to_plot)],MaxWait,r)
     
+    # Now we need to check which taxis can service which
+    # requests
     for v in Taxis:
         
-        if Taxis[v].available:
+        if len(Taxis[v].passengers) < k:
             
-            # get the requests that are servicable
+            # get the requests that are serviceable
             cab = Taxis[v]
-            jtfromme = times[cab.loc,:]            
-            potentials = requests.copy()[requests['qos']+jtfromme[requests['from_node']]<=MaxWait]
+            jtfromme = times[cab.loc,:]
             
+            # this cab can get to these requests within their max wait time 
+            potentials = requests[requests['qos']+jtfromme[requests['from_node']]<=MaxWait]
+            
+            # if this cab can't service any requests, then skip to the next
+            # cab - else update the rv_graph
             if potentials.empty:
                 continue
-            
-            if potentials.shape[0] == 1:
-                # if there is only one combination posible, then record the 
-                # cost and add it to the edges
-                r = potentials.index.values[0]
-                
-                # calculate the delays
-                total_delay = potentials['qos'].values[0] + \
-                    jtfromme[potentials['from_node']][0]
+            else:                                    
+                # assign edges between cab and requests with the journey
+                # time as the value - don't assign the initial qos twice - 
+                # it is assigned in the shortest path function
+                for i,delay in enumerate(jtfromme[potentials['from_node']]):
+                    rv_graph['rv'][(potentials.index[i],v)] = delay
                     
-                # assign edges and record solo trib
-                vehicle_edges[(r,v)] = total_delay
-                request_edges[frozenset((r,r))] = total_delay
-                
-                # skip to the next cab
-                continue
-            
-            
-            break
-         
+    return rv_graph,requests
+
 
 ### Evaluation
 # get requests in 30s chunks
@@ -342,6 +217,7 @@ def update_rv(t,requests,times,rv_graph,visualize=False):
 # Cycle in hour chunks, so we don't have to check to load
 # new journey times each iteration we only load them on the hour
 rv_graph = dict(rr=dict(),rv=dict())
+active_requests = pd.DataFrame()
 for d in D:
     
     # convert to sun, weekday, sat
@@ -357,32 +233,30 @@ for d in D:
                                   times)
         req_byw = req_slice.groupby('window')
         
-        # these are the 30s windows
-        for w,requests in req_byw:
+        # get new requests in 30s windows and add them to the current set of 
+        # requests
+        for w,new_requests in req_byw:
             # this is the current time
             t = w*delta + delta
+            active_requests = active_requests.append(
+                new_requests.drop(['window','day','hour'],axis=1)
+                )
+                        
+            # step 1: update the rv graph
+            print(f"RV performance t={t}s, {active_requests.shape[0]} requests:")
+            start = time.process_time()
+            rv_graph,active_requests = update_rv(
+                t,active_requests.copy(),
+                times,rv_graph,visualize=False
+                )
+            end = time.process_time()
             
-            # TODO: create shareability graph of requests
-            # step 1: find vehicals that can satisfy these requests
-            rv_graph = update_rv(t,requests.iloc[:,[0,1,2,-2,-1]].copy(),
-                                    times,rv_graph,visualize=False)
+            # step 2: explore complete - subregions of the rv graph for
+            # cliques
+            print(f"  - request edges: {len(rv_graph['rr'])}, rv edges: {len(rv_graph['rv'])}")
+            print(f"  - processing time: {end-start:0.1f}s\n")      
             
-            break
         
         break
     
     break
-
-# print(jt.get_hourofday(0,0)[:3,:3])
-
-# print(reqs.head())
-
-
-
-
-
-
-
-
-
-

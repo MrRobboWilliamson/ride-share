@@ -23,7 +23,8 @@ class Taxi():
         
         # fields for checking for availability
         self.available = True
-        self.next_available = None        
+        self.next_available_time = None
+        self.next_available_loc = None
            
     def get_id(self):
         
