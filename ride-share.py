@@ -7,6 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import time
+import networkx as nx
 
 # our modules
 from source_data import JourneyTimes, Requests
@@ -74,9 +75,9 @@ jt = JourneyTimes(r'datasets/journey_times')
 # Michael used something called Hqueue or something to do this
 # it should be in one of the python files on Blackboard
 # I suggest we inject them at randomly sampled drop off points
-Taxis = { v: Taxi(v,k,init_locs[v]) for v in V }
+Taxis = { f"v{v}": Taxi(f"v{v}",k,init_locs[v]) for v in V }
     
-def build_shareable(t,requests,times,rv_graph,to_check,visualise=False):        
+def build_shareable(t,requests,times,rv_graph,visualise=False):        
     """
     Searches each feasible pair of requests for the shortest path
     between them  
@@ -88,7 +89,7 @@ def build_shareable(t,requests,times,rv_graph,to_check,visualise=False):
         # pop this request off the list
         orequests = orequests.drop(r1)
         
-        # only check feasible trips
+        # only check feasible pairs
         jt12 = times[o1,:]
         jt21 = times[:,o1]
         to_check = orequests[
@@ -103,14 +104,13 @@ def build_shareable(t,requests,times,rv_graph,to_check,visualise=False):
                          (r2,dict(route=(o2,d2),other=r1,wait=qos2,base=bjt2))])
             
             # only assess once
-            pair_key = tuple(sorted([r1,r2]))
-            if pair_key not in rv_graph[r'rr']:
+            if not rv_graph.has_edge(r1,r2):
                 cost,path = shortest_path(0,pair,None,times,MaxWait)
             
                 if path:             
                     # the key of the 'rr' graph is in the order of the 
                     # best to pickup first     
-                    rv_graph['rr'][pair_key] = [cost,path]
+                    rv_graph.add_edge(r1,r2,cost=cost,path=path)
                     
                     # update requests df if there is a match
                     requests.loc[r1,'is_alone'] = False
@@ -123,9 +123,9 @@ def build_shareable(t,requests,times,rv_graph,to_check,visualise=False):
                 # if we've already assessed this pair
                 # we just need to update the costs with the 
                 # additional waiting time
-                rv_graph['rr'][pair_key][0] += 2*delta
+                rv_graph.edges[r1,r2]['cost'] += 2*delta
                 
-    return requests
+    return requests,rv_graph
             
 
 def update_rv(t,requests,times,rv_graph,visualize=False):
@@ -144,19 +144,17 @@ def update_rv(t,requests,times,rv_graph,visualize=False):
     # this is the initial wait time
     requests['qos'] = t - requests['time'].values
     requests['is_alone'] = True
-
-    # get the request edges - might want to return "unshareables"
-    to_check = list(requests.index.values)
     
     # returns a mask of the lonely requests
     start = time.process_time()    
-    requests = build_shareable(t,requests,times,rv_graph,to_check)
+    requests,rv_graph = build_shareable(t,requests,times,rv_graph)
     end = time.process_time()
     print(f"  - build_shareable function {end-start:0.1f}s")
     
     if visualize:
+        ### THIS WON'T WORK - NEEDS TO BE UPDATED ###
         # randomly get a request that is shareable
-        r = list(np.random.choice(list(rv_graph['rr'].keys())))[0]
+        r = list(np.random.choice(list(rv_graph.keys())))[0]
         
         # get all of the other requests
         to_plot = set()
@@ -190,15 +188,40 @@ def update_rv(t,requests,times,rv_graph,visualize=False):
                 # time as the value - don't assign the initial qos twice - 
                 # it is assigned in the shortest path function
                 for i,delay in enumerate(jtfromme[potentials['from_node']]):
-                    rv_graph['rv'][(potentials.index[i],v)] = delay
+                    rv_graph.add_edge(potentials.index[i],v,cost=delay)
                     
     return rv_graph,requests
 
+def create_rtv_graph(rv,requests):
+    """
+    Explore the cliques of the rv graph to find feasible trips
+    """
+    
+    
+    # color the cabs orange
+    # fig,ax = plt.subplots(figsize=(24,16))
+    # colors = ['tab:blue' if type(n) == str else 'tab:orange' for n in list(rv.nodes)]    
+    # nx.draw(rv,node_size=2,with_labels=False,node_color=colors,
+    #         alpha=0.5,width=0.1,ax=ax)
+    
+    for clique in list(nx.algorithms.clique.find_cliques(rv)):
+        
+        
+        if len(clique) > 4:
+            
+            # color the cabs orange
+            print(clique)
+            subg = rv.subgraph(clique)
+            fig,ax = plt.subplots(figsize=(10,6))
+            colors = ['tab:orange' if type(n) == str else 'tab:blue' for n in list(subg.nodes)]    
+            nx.draw(subg,node_size=30,with_labels=False,node_color=colors,
+                    alpha=0.5,width=1,ax=ax)
+        
+            break
 
 ### Evaluation
-# get requests in 30s chunks
-# generate shareability
-# create rv, rtv graphs
+# create rv graph
+# create rtv graph
 # assign vehicles to trips
 # requests that can't be satisfied stay in the request pool
 # def shareable(requests):
@@ -213,7 +236,7 @@ def update_rv(t,requests,times,rv_graph,visualize=False):
 
 # Cycle in hour chunks, so we don't have to check to load
 # new journey times each iteration we only load them on the hour
-rv_graph = dict(rr=dict(),rv=dict())
+rv_graph = nx.Graph()
 active_requests = pd.DataFrame()
 for d in D:
     
@@ -250,9 +273,12 @@ for d in D:
             
             # step 2: explore complete - subregions of the rv graph for
             # cliques
-            print(f"  - request edges: {len(rv_graph['rr'])}, rv edges: {len(rv_graph['rv'])}")
-            print(f"  - processing time: {end-start:0.1f}s\n")      
+            print(f"  - number of edges: {len(list(rv_graph.edges))}")
+            print(f"  - processing time: {end-start:0.1f}s\n")
+            rtv_graph = create_rtv_graph(rv_graph,active_requests)    
             
+            
+            break
         
         break
     
