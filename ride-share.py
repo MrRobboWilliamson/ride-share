@@ -81,6 +81,10 @@ def build_shareable(t,requests,times,rv_graph,visualise=False):
     """
     Searches each feasible pair of requests for the shortest path
     between them  
+    
+    TODO: future improvement - generate optional routes as weighted
+    graphs and find shortest path using networkx feature. Instead of
+    my hacky function.    
     """
     
     orequests = requests.copy()
@@ -198,26 +202,27 @@ def create_rtv_graph(rv,requests):
     """
     
     
-    # color the cabs orange
-    # fig,ax = plt.subplots(figsize=(24,16))
-    # colors = ['tab:blue' if type(n) == str else 'tab:orange' for n in list(rv.nodes)]    
-    # nx.draw(rv,node_size=2,with_labels=False,node_color=colors,
-    #         alpha=0.5,width=0.1,ax=ax)
-    
     for clique in list(nx.algorithms.clique.find_cliques(rv)):
         
+        ### check if constraints are satisfied to then generate ###
+        ### feasible trips and assign request and vehicles to trips ###
         
-        if len(clique) > 4:
+        
+        
+        break
+        
+        ### If you want to visualise the cliques ###
+        # if len(clique) > 4:
             
-            # color the cabs orange
-            print(clique)
-            subg = rv.subgraph(clique)
-            fig,ax = plt.subplots(figsize=(10,6))
-            colors = ['tab:orange' if type(n) == str else 'tab:blue' for n in list(subg.nodes)]    
-            nx.draw(subg,node_size=30,with_labels=False,node_color=colors,
-                    alpha=0.5,width=1,ax=ax)
+        #     # color the cabs orange
+        #     print(clique)
+        #     subg = rv.subgraph(clique)
+        #     fig,ax = plt.subplots(figsize=(10,6))
+        #     colors = ['tab:orange' if type(n) == str else 'tab:blue' for n in list(subg.nodes)]    
+        #     nx.draw(subg,node_size=30,with_labels=False,node_color=colors,
+        #             alpha=0.5,width=1,ax=ax)
         
-            break
+        #     break
 
 ### Evaluation
 # create rv graph
