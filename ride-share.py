@@ -284,25 +284,39 @@ for d in D:
                 # If the clique contains only Int64s and no Strings then it
                 # is a number of requests that no vehicle can service, so we
                 # assign them to the "unassigned" node. DO WE JUST DISCARD?
+                # RW- assigning them to an "unassigned" trip sounds right
                 if all(isinstance(i, type(clique[0])) for i in clique[1:]):
                     for r in clique:
                     # add 'rt' edge
                         rtv_graph.add_edge(r,"unassigned", edge_type = 'rt')
                 else:
                     # Make sure the vehicle is the last item in the clique
+                    # RW: I think we can kill two birds by sorting cliques 
+                    #     and putting the string value at the end              
                     while type(clique[-1]) == np.int64:
                         clique.append(clique.pop(0))
-                    
+                        
+                                        
                     # Get the vehicle name, number of passengers in the vehicle,
                     # trip and the number of requests in the trip
                     vehicle = clique[-1]
+                    print(vehicle)
                     passengers = len(Taxis[vehicle].passengers)
-                    trip = tuple(clique[:-1])
+                    
+                    # RW: if we're going to use 'trip' as a node id, I think it
+                    #     needs to sorted to avoid symetry issues - or use a frozenset
+                    trip = tuple(clique[:-1])                    
                     reqs = len(trip)
                     
                     # Discard any trips where there are more requests than
                     # available seats in the vehicle
+                    # RW: I think we should explore sub-trips within a clique.
+                    #     For example each request in a clique forms a trip, 
+                    #     then each pair forms a trip ... up to k - pass
                     if reqs > (k-passengers):
+                        
+                        # I think doing this removes a bunch of feasible trips
+                        
                         pass
                     
                     # Then we look at the "one request + empty vehicle" trips
@@ -314,6 +328,7 @@ for d in D:
                     # request trips can be accomodated.
                     elif reqs == 1 and passengers == 0:
                         # add 'tv' edge
+                        
                         rtv_graph.add_edge(trip, vehicle, wait = 
                               rv_graph.get_edge_data(clique[0],vehicle)['cost'],
                               delay = 0, edge_type = 'tv', add = 1)
@@ -323,7 +338,7 @@ for d in D:
                     # then deal with the "one request + non-empty vehicle" trips.
                     # This trip will have a delay > 0 due to deviations
                     # for both passengers
-                    elif reqs == 1 and passengers >0:
+                    elif reqs == 1 and passengers > 0:
                         
                         # get the passenger's details
                         r1 = Taxis[vehicle].passengers[0].req_id
