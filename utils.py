@@ -42,6 +42,46 @@ class ConsoleBar:
         clear_output(wait=True)
         print(bar_str.format(progress, '.'*bar_ticks+'>'), end=print_end)
         
+def is_cost_error(cost,path,pair,times):
+    """
+    Check the costs
+    """
+    # get the request ids
+    pick_1 = path[0][0]
+    pick_2 = path[1][0]
+    
+    # get the leg times
+    leg_1 = times[path[0][1],path[1][1]]
+    leg_2 = times[path[1][1],path[2][1]]
+    leg_3 = times[path[2][1],path[3][1]]    
+    
+    # get the waiting costs for the first and second pickup
+    wait_1 = pair[pick_1]['wait']
+    wait_2 = leg_1 + pair[pick_2]['wait']
+    
+    # first pickup gets the first and second leg journey time
+    # both requests get the second leg (otherwise not shared)
+    jt_1 = leg_1 + leg_2
+    jt_2 = leg_2
+    
+    # get the drop off request id's
+    drop_1 = path[2][0]
+    drop_2 = path[3][0]
+    
+    # if the second pickup is dropped first, then first cops the last leg
+    # else second cops the last leg
+    if pick_2 == drop_1:        
+        jt_1 += leg_3
+    else:
+        jt_2 += leg_3               
+    
+    # now we compare the journey times to the base journey times
+    delay_1 = jt_1 - pair[pick_1]['base']
+    delay_2 = jt_2 - pair[pick_2]['base']
+    
+    return (cost!=(wait_1+wait_2+delay_1+delay_2))
+    
+        
 def plot_requests(t,requests,MaxWait,r=None):
     
     colors = ['tab:blue']*requests.shape[0]

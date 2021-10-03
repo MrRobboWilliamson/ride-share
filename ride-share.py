@@ -12,7 +12,11 @@ import networkx as nx
 # our modules
 from source_data import JourneyTimes, Requests
 from taxis import Taxi, Passenger
-from utils import assign_basejt, plot_requests, shortest_path
+from utils import assign_basejt, plot_requests, shortest_path, is_cost_error
+
+# cost error
+class CostError(Exception):
+    pass
 
 np.random.seed(16)
 
@@ -110,10 +114,18 @@ def build_shareable(t,requests,times,rv_graph,visualise=False):
             # only assess once
             if not rv_graph.has_edge(r1,r2):
                 cost,path = shortest_path(0,pair,None,times,MaxWait)
-            
+                
                 if path:             
                     # the key of the 'rr' graph is in the order of the 
-                    # best to pickup first     
+                    # best to pickup first 
+                    
+                    #### check the cost and path ####
+                    # check cost against pair
+                    if is_cost_error(cost,path,pair,times):
+                        
+                        raise CostError("found one!")                   
+                    
+                    
                     rv_graph.add_edge(r1,r2,cost=cost,path=path)
                     
                     # update requests df if there is a match
@@ -401,6 +413,12 @@ for d in D:
                                        [trip_data['path'][1][1]]
                         r1 = trip_data['path'][0][0]
                         r2 = trip_data['path'][1][0]
+                        
+                        # RW: be careful here - use ".loc" not ".iloc" as 
+                        #     .iloc ignores the label and just uses the position
+                        #     of the record in the dataframe
+                        #     and because we're changing active_requests (adding
+                        #     and removing records), the positions will change
                         t2,o2,d2,ltp2,bjt2,qos2,_ = active_requests.iloc[r2]
                         
                         if (ad_wait + qos2) > MaxWait:
