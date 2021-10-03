@@ -183,7 +183,8 @@ def assign_basejt(requests,times):
 
 def shortest_path(pair,times,MaxWait):
     """
-       
+    TODO: update comments
+    
     some helpful information:
         - only second pickup incurs an additional wait delay
         - when deciding who to drop first, 
@@ -212,7 +213,7 @@ def shortest_path(pair,times,MaxWait):
         # assign a massive cost if we exceed the wait time
         # on the other request
         if first_pickup_cost > MaxWait or second_pickup_cost > MaxWait:
-            return best_path            
+            continue        
                                                    
         # now look at the dropoffs
         for first_dropoff in dropoffs:
@@ -241,7 +242,7 @@ def shortest_path(pair,times,MaxWait):
             
             # here we need to check the overall delay constraints
             if first_dropoff_cost > MaxWait or second_dropoff_cost > MaxWait:
-                return best_path
+                continue
             
             # calculate the total cost
             total_cost = first_pickup_cost + second_pickup_cost + \
