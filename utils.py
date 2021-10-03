@@ -42,7 +42,7 @@ class ConsoleBar:
         clear_output(wait=True)
         print(bar_str.format(progress, '.'*bar_ticks+'>'), end=print_end)
         
-def is_cost_error(cost,path,pair,times):
+def is_cost_error(cost,path,pair,times,show=False):
     """
     Check the costs
     """
@@ -79,11 +79,9 @@ def is_cost_error(cost,path,pair,times):
     base_1 = pair[pick_1]['base']
     base_2 = pair[pick_2]['base']
     delay_1 = jt_1 - base_1
-    delay_2 = jt_2 - base_2
+    delay_2 = jt_2 - base_2    
     
-    
-    
-    if cost!=(wait_1+wait_2+delay_1+delay_2):
+    if show:
         
         print("\nPath:",path)
         print(f"Costs: {cost} != {wait_1+wait_2+delay_1+delay_2}")
@@ -91,16 +89,16 @@ def is_cost_error(cost,path,pair,times):
         # request 1 costs
         print(f"  R1: Wait: {wait_1}s")        
         if pick_2 == drop_1:
-            print(f"      Delay: {delay_1}s = {base_1} - {jt_1} ({leg_1}+{leg_2}+{leg_3})")
+            print(f"      Delay: {delay_1}s = {jt_1} - {base_1} ({leg_1}+{leg_2}+{leg_3})")
         else:
-            print(f"      Delay: {delay_1}s = {base_1} - {jt_1} ({leg_1}+{leg_2})")            
+            print(f"      Delay: {delay_1}s = {jt_1} - {base_1} ({leg_1}+{leg_2})")            
         
         # request 2 costs
         print(f"  R2: Wait: {wait_2}s = {pair[pick_2]['wait']} + {leg_1}")
         if pick_2 == drop_1:
-            print(f"      Delay: {delay_2}s = {base_2} - {jt_2} (should be 0)")
+            print(f"      Delay: {delay_2}s = {jt_2} - {base_2} (should be 0)")
         else:
-            print(f"      Delay: {delay_2}s = {base_2} - {jt_2} ({leg_2}+{leg_3})")
+            print(f"      Delay: {delay_2}s = {jt_2} - {base_2} ({leg_2}+{leg_3})")
             
     
     return (cost!=(wait_1+wait_2+delay_1+delay_2))
@@ -183,92 +181,77 @@ def assign_basejt(requests,times):
         
     return pd.concat(assigned).sort_index()   
 
-__shortest_paths = dict()
-def shortest_path(leg,pair,path,times,MaxWait):
+def shortest_path(pair,times,MaxWait):
     """
-    recursively find the shortest path between two requests by 
-    minimizing waiting and in journey delays
-    
+       
     some helpful information:
         - only second pickup incurs an additional wait delay
         - when deciding who to drop first, 
             - if first drop, picked up second - only the last dropped gets jt delays
-            - other wise they both do
-    
+            - other wise they both do    
     """    
     
-    if leg > 1:        
-        return 0,path
+    # pickups and dropoffs
+    pickups = list(pair.keys())
+    dropoffs = list(pickups)
     
-    best_path = 99999,False
-    for r in pair:
-        if leg == 0:            
-            # init the path
-            path = []
+    best_path = 9999999,False   
+    for first_pickup in pickups:
+                                    
+        # get this request pickup node
+        first_node = pair[first_pickup]['route'][0]
             
-            # get this request pickup node
-            first = pair[r]['route'][leg]
-            path.append((r,first))
+        # get the second node in the journey
+        second_pickup = pair[first_pickup]['other']
+        second_node = pair[second_pickup]['route'][0]
             
-            # get the second node in the journey
-            other = pair[r]['other']
-            second = pair[other]['route'][leg]
-            path.append((other,second))
+        # add the initial wait time and check against the MaxWait constraint
+        first_pickup_cost = pair[first_pickup]['wait']
+        second_pickup_cost = times[first_node,second_node] + pair[second_pickup]['wait']
             
-            # add the initial wait time and check against the MaxWait constraint
-            cost = times[first,second] + pair[other]['wait']
+        # assign a massive cost if we exceed the wait time
+        # on the other request
+        if first_pickup_cost > MaxWait or second_pickup_cost > MaxWait:
+            return best_path            
+                                                   
+        # now look at the dropoffs
+        for first_dropoff in dropoffs:
             
-            # assign a massive cost if we exceed the wait time
-            # on the other request
-            if cost > MaxWait:
-                cost = float('inf')
-                
-            # now we can add in the first guy's initial wait cost
-            ocost = pair[r]['wait']
+            # get the last dropoff and the nodes
+            second_dropoff = pair[first_dropoff]['other']            
+            third_node = pair[first_dropoff]['route'][1]
+            fourth_node = pair[second_dropoff]['route'][1]
                         
-        else:
-            # get the next node and the journey time
-            next_ = pair[r]['route'][leg]
-            path.append((r,next_))
+            # calculate the journey times
+            jt_0 = times[first_node,second_node]
+            jt_1 = times[second_node,third_node]
+            jt_2 = times[third_node,fourth_node]
             
-            # get the other request and the last node - which
-            # will be the other request's destination
-            other = pair[r]['other']
-            last = pair[other]['route'][1]
+            # if the first drop is the same request as the second pickup, there
+            # will be no journey time delay on the first drop
+            # its all on the second drop
+            if first_dropoff == second_pickup:                                
+                first_dropoff_cost = 0 
+                second_dropoff_cost = (jt_0+jt_1+jt_2) - pair[second_dropoff]['base']                         
             
-            # if this next node is owned by the same request as the last, there
-            # will be no journey time delay
-            if r == path[-1][0]:
-                # so we can calculate the journey time delay on the other
-                # request
-                cost = times[path[0][1],path[1][1]] + \
-                    times[path[1][1],next_] + \
-                        times[next_,last] - \
-                            pair[other]['base']
-                            
-                # update the path            
-                path.append((other,last))
-                ocost = 0                           
+            # otherwise it is split between the requests
             else:
-                # we have to calculate the journey time costs against both
-                # routes
-                jt0 = times[path[0][1],path[1][1]]
-                jt1 = times[path[1][1],next_]
-                jt2 = times[next_,last]
-                
-                # update the path and costs
-                path.append((other,last))
-                cost = jt0 + jt1 - pair[r]['base']
-                ocost = jt1 + jt2 - pair[other]['base']
+                first_dropoff_cost = jt_0 + jt_1 - pair[first_dropoff]['base']
+                second_dropoff_cost = jt_1 + jt_2 - pair[second_dropoff]['base']
             
             # here we need to check the overall delay constraints
-            if cost > MaxWait or ocost > MaxWait:
-                cost = float('inf')
+            if first_dropoff_cost > MaxWait or second_dropoff_cost > MaxWait:
+                return best_path
             
-        path = list(path)
-        jt = cost + ocost + shortest_path(leg+1,pair,path,times,MaxWait)[0]
-        
-        if jt < best_path[0]:
-            best_path = jt,path
+            # calculate the total cost
+            total_cost = first_pickup_cost + second_pickup_cost + \
+                first_dropoff_cost + second_dropoff_cost
+                    
+            if total_cost < best_path[0]:
+                path = [(first_pickup,first_node),
+                        (second_pickup,second_node),
+                        (first_dropoff,third_node),
+                        (second_dropoff,fourth_node)]                
+                best_path = total_cost,path
         
     return best_path

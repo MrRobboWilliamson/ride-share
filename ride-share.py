@@ -113,19 +113,17 @@ def build_shareable(t,requests,times,rv_graph,visualise=False):
             
             # only assess once
             if not rv_graph.has_edge(r1,r2):
-                cost,path = shortest_path(0,pair,None,times,MaxWait)
                 
+                cost,path = shortest_path(pair,times,MaxWait)
+                                
                 if path:             
                     # the key of the 'rr' graph is in the order of the 
                     # best to pickup first 
                     
                     #### check the cost and path ####
                     # check cost against pair
-                    if not is_cost_error(cost,path,pair,times):
-                        print("\ngood")
-                        
-                        # raise CostError("found one!")                   
-                    
+                    # if is_cost_error(cost,path,pair,times,show=True):
+                    #     raise CostError("found one!")
                     
                     rv_graph.add_edge(r1,r2,cost=cost,path=path)
                     
@@ -373,7 +371,7 @@ for d in D:
                                     ])
                         
                         # get the cost and shortest path
-                        cost,path = shortest_path(0,pair,None,times,MaxWait)
+                        cost,path = shortest_path(pair,times,MaxWait)
                         
                         # if the shortest path cost exceeds the max delays,
                         # discard the trip, otherwise add the 'rt' and 'tv' edges
