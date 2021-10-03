@@ -76,8 +76,32 @@ def is_cost_error(cost,path,pair,times):
         jt_2 += leg_3               
     
     # now we compare the journey times to the base journey times
-    delay_1 = jt_1 - pair[pick_1]['base']
-    delay_2 = jt_2 - pair[pick_2]['base']
+    base_1 = pair[pick_1]['base']
+    base_2 = pair[pick_2]['base']
+    delay_1 = jt_1 - base_1
+    delay_2 = jt_2 - base_2
+    
+    
+    
+    if cost!=(wait_1+wait_2+delay_1+delay_2):
+        
+        print("\nPath:",path)
+        print(f"Costs: {cost} != {wait_1+wait_2+delay_1+delay_2}")
+        
+        # request 1 costs
+        print(f"  R1: Wait: {wait_1}s")        
+        if pick_2 == drop_1:
+            print(f"      Delay: {delay_1}s = {base_1} - {jt_1} ({leg_1}+{leg_2}+{leg_3})")
+        else:
+            print(f"      Delay: {delay_1}s = {base_1} - {jt_1} ({leg_1}+{leg_2})")            
+        
+        # request 2 costs
+        print(f"  R2: Wait: {wait_2}s = {pair[pick_2]['wait']} + {leg_1}")
+        if pick_2 == drop_1:
+            print(f"      Delay: {delay_2}s = {base_2} - {jt_2} (should be 0)")
+        else:
+            print(f"      Delay: {delay_2}s = {base_2} - {jt_2} ({leg_2}+{leg_3})")
+            
     
     return (cost!=(wait_1+wait_2+delay_1+delay_2))
     
@@ -182,7 +206,7 @@ def shortest_path(leg,pair,path,times,MaxWait):
             # init the path
             path = []
             
-            # get the first node
+            # get this request pickup node
             first = pair[r]['route'][leg]
             path.append((r,first))
             

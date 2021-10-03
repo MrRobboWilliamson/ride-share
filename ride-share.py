@@ -121,9 +121,10 @@ def build_shareable(t,requests,times,rv_graph,visualise=False):
                     
                     #### check the cost and path ####
                     # check cost against pair
-                    if is_cost_error(cost,path,pair,times):
+                    if not is_cost_error(cost,path,pair,times):
+                        print("\ngood")
                         
-                        raise CostError("found one!")                   
+                        # raise CostError("found one!")                   
                     
                     
                     rv_graph.add_edge(r1,r2,cost=cost,path=path)
@@ -312,7 +313,7 @@ for d in D:
                     # Get the vehicle name, number of passengers in the vehicle,
                     # trip and the number of requests in the trip
                     vehicle = clique[-1]
-                    print(vehicle)
+                    # print(vehicle)
                     passengers = len(Taxis[vehicle].passengers)
                     
                     # RW: if we're going to use 'trip' as a node id, I think it
