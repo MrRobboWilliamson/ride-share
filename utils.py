@@ -256,3 +256,97 @@ def shortest_path(pair,times,MaxWait):
                 best_path = total_cost,path
         
     return best_path
+
+
+# add a feasible single request trip to the rtv graph
+# edge of the rv graph and no delay time for the trip. Add an
+# 'tv' edge with those two values and a 'rt' edge between the
+# request and the trip. NOTE: Trips are tuples so that multi
+# request trips can be accomodated.
+def add_one_req(rtv_graph, rv_graph, trip, vehicle, active_requests):
+    
+    # add 'rt' edge
+    rtv_graph.add_edge(trip, vehicle, wait = 
+            active_requests.loc[trip[0]]['qos'] + \
+            rv_graph.get_edge_data(trip[0],vehicle)['cost'],
+            delay = 0, edge_type = 'tv')
+    # add 'rt' edge
+    rtv_graph.add_edge(trip[0],trip, edge_type = 'rt')
+    
+    return rtv_graph
+
+
+# check a one request trip with a vehicle that already has a passenger in it.
+# If the added delay to the passenger in the vehicles is within bounds add 
+# the trip to the rtv graph otherwise discard
+def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
+                  vehicle,trip,MaxWait,MaxQLoss):
+    
+    # get the passenger's details
+    r1 = Taxis[vehicle].passengers[0].req_id
+    o1 = Taxis[vehicle].loc # passenger is in the taxi
+    d1 = Taxis[vehicle].passengers[0].drop_off_node
+    qos1 = Taxis[vehicle].passengers[0].wait_time
+    bjt1 = times[o1][d1] # whatever is left of the journey
+    
+    # get the new pick up request details
+    r2 = trip[0]
+    t2,o2,d2,ltp2,bjt2,qos2,_ = active_requests.loc[r2]
+    qos2 += rv_graph.get_edge_data(r2,vehicle)['cost']
+    
+    # build the data pair for the shortest path algorithm
+    pair = dict([(r1,dict(
+                route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
+                (r2,dict(
+                route=(o2,d2),other=r1,wait=qos2,base=bjt2))
+                ])
+    
+    # get the cost and shortest path
+    cost,path = shortest_path(pair,times,MaxWait)
+    
+    # if the shortest path cost exceeds the max delays,
+    # discard the trip, otherwise add the 'rt' and 'tv' edges
+    if cost > MaxQLoss:
+        pass
+    else:
+        tot_wait = qos2 + qos1
+        # add 'tv' edge
+        rtv_graph.add_edge(trip, vehicle, wait = tot_wait, delay = cost - 
+                           tot_wait, edge_type = 'tv', path = path)
+        # add 'rt' edge
+        rtv_graph.add_edge(r2,trip, edge_type = 'rt')
+    
+    return rtv_graph
+
+
+# checks a trip that has two requests for feasibility and either discards it
+# or adds it to the rtv_graph.  We know the trip delay and
+# the wait time for the first pickup is within feasible 
+# limits, just need to check the additional wait time for 
+# the second pickup (time between first and second node)
+def check_two_req(rv_graph,rtv_graph,times,active_requests,
+                  vehicle,trip,MaxWait):
+
+    trip_data = rv_graph.get_edge_data(trip[0],trip[1],vehicle)
+    ad_wait = times[trip_data['path'][0][1]] \
+                   [trip_data['path'][1][1]]
+    r1 = trip_data['path'][0][0]
+    r2 = trip_data['path'][1][0]  
+  
+    qos2 = active_requests.loc[r2]['qos']
+    
+    if (ad_wait + qos2) > MaxWait:
+       pass
+    else:
+        qos1 = active_requests.loc[r1]['qos']
+        tot_wait = \
+              qos1 + ad_wait + qos2
+        
+        rtv_graph.add_edge(trip, vehicle, wait = 
+             tot_wait, delay = trip_data['cost'] - tot_wait, 
+             edge_type = 'tv', path = trip_data['path'])
+        # add 'rt' edges
+        rtv_graph.add_edge(r1,trip, edge_type = 'rt')
+        rtv_graph.add_edge(r2,trip, edge_type = 'rt')
+    
+    return rtv_graph

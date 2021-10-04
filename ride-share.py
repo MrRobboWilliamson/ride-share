@@ -8,11 +8,14 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import time
 import networkx as nx
+from numbers import Number
+import itertools
 
 # our modules
 from source_data import JourneyTimes, Requests
 from taxis import Taxi, Passenger
-from utils import assign_basejt, plot_requests, shortest_path, is_cost_error
+from utils import assign_basejt, plot_requests, shortest_path, is_cost_error \
+    , check_two_req, add_one_req, check_one_req_one_passenger
 
 # cost error
 class CostError(Exception):
@@ -273,7 +276,7 @@ for d in D:
             print(f"RV performance t={t}s, {active_requests.shape[0]} requests:")
             start = time.process_time()
             rv_graph,active_requests = update_rv(
-                t,active_requests.iloc[0:300].copy(),
+                t,active_requests.copy(),
                 times,rv_graph,visualize=False
                 )
             end = time.process_time()
@@ -296,17 +299,22 @@ for d in D:
                 # is a number of requests that no vehicle can service, so we
                 # assign them to the "unassigned" node. DO WE JUST DISCARD?
                 # RW- assigning them to an "unassigned" trip sounds right
+                
+                # TF- Thinking about it, I reckon discarding is probably best 
+                # as they are infeasible and won't make any difference to the
+                # optimal solution in the ILP. We can just check after 
+                # optimisation which requests have not been allocated.
                 if all(isinstance(i, type(clique[0])) for i in clique[1:]):
+                    pass
+                    """
                     for r in clique:
                     # add 'rt' edge
                         rtv_graph.add_edge(r,"unassigned", edge_type = 'rt')
+                    """
                 else:
-                    # Make sure the vehicle is the last item in the clique
-                    # RW: I think we can kill two birds by sorting cliques 
-                    #     and putting the string value at the end              
-                    while type(clique[-1]) == np.int64:
-                        clique.append(clique.pop(0))
-                        
+                    # Sort the clique in request order with vehicle at the end       
+                    clique = sorted(clique, key=lambda x: (x is not None, '' 
+                           if isinstance(x, Number) else type(x).__name__, x))
                                         
                     # Get the vehicle name, number of passengers in the vehicle,
                     # trip and the number of requests in the trip
@@ -319,123 +327,58 @@ for d in D:
                     trip = tuple(clique[:-1])                    
                     reqs = len(trip)
                     
-                    # Discard any trips where there are more requests than
-                    # available seats in the vehicle
-                    # RW: I think we should explore sub-trips within a clique.
-                    #     For example each request in a clique forms a trip, 
-                    #     then each pair forms a trip ... up to k - pass
-                    if reqs > (k-passengers):
-                        
-                        # I think doing this removes a bunch of feasible trips
-                        
-                        pass
-                    
-                    # Then we look at the "one request + empty vehicle" trips
+                    # Start with the "one request + empty vehicle" trips
                     # which will always be feasible because we checked in the rv
-                    # graph creation. They'll have a wait time of the cost of the
-                    # edge of the rv graph and no delay time for the trip. Add an
-                    # 'tv' edge with those two values and a 'rt' edge between the
-                    # request and the trip. NOTE: Trips are tuples so that multi
-                    # request trips can be accomodated.
-                    elif reqs == 1 and passengers == 0:
-                        # add 'tv' edge
+                    # graph creation.
+                    if reqs == 1 and passengers == 0:
                         
-                        rtv_graph.add_edge(trip, vehicle, wait = 
-                              rv_graph.get_edge_data(clique[0],vehicle)['cost'],
-                              delay = 0, edge_type = 'tv', add = 1)
-                        # add 'rt' edge
-                        rtv_graph.add_edge(clique[0],trip, edge_type = 'rt')
+                        rtv_graph = add_one_req(rtv_graph, rv_graph, trip, 
+                                                vehicle, active_requests)
                                                
                     # then deal with the "one request + non-empty vehicle" trips.
                     # This trip will have a delay > 0 due to deviations
                     # for both passengers
-                    elif reqs == 1 and passengers > 0:
+                    elif reqs == 1 and passengers == 1:
                         
-                        # get the passenger's details
-                        r1 = Taxis[vehicle].passengers[0].req_id
-                        o1 = Taxis[vehicle].loc # passenger is in the taxi
-                        d1 = Taxis[vehicle].passengers[0].drop_off_node
-                        qos1 = Taxis[vehicle].passengers[0].wait_time
-                        bjt1 = times[o1][d1] # whatever is left of the journey
-                        
-                        # get the new pick up request details
-                        r2 = clique[0]
-                        t2,o2,d2,ltp2,bjt2,qos2,_ = active_requests.iloc[r2]
-                        qos2 += rv_graph.get_edge_data(clique[0],vehicle)['cost']
-                        
-                        # build the data pair for the shortest path algorithm
-                        pair = dict([(r1,dict(
-                                    route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
-                                    (r2,dict(
-                                    route=(o2,d2),other=r1,wait=qos2,base=bjt2))
-                                    ])
-                        
-                        # get the cost and shortest path
-                        cost,path = shortest_path(pair,times,MaxWait)
-                        
-                        # if the shortest path cost exceeds the max delays,
-                        # discard the trip, otherwise add the 'rt' and 'tv' edges
-                        if cost > MaxQLoss:
-                            pass
-                        else:
-                            # add 'tv' edge
-                            rtv_graph.add_edge(trip, vehicle, wait = 
-                                 rv_graph.get_edge_data(clique[0],vehicle)['cost'],
-                                 delay = cost, edge_type = 'tv', path = path, 
-                                 add = 2)
-                            # add 'rt' edge
-                            rtv_graph.add_edge(clique[0],trip, edge_type = 'rt')
-                            
-                    # finally deal with the "two request & empty vehicle" trips
+                        rtv_graph = check_one_req_one_passenger(Taxis,rv_graph
+                                    ,rtv_graph,times,active_requests,vehicle,
+                                    trip,MaxWait,MaxQLoss)
+                                                   
+                    # finally deal with the "more than one request" trips
                     else:
-                        # check if all T' = T \ r subtrips are feasible, if not
-                        # then this is non-feasible and we discard
-                        """
-                        f_r = 0
-                        for r in trip:
-                            if type(rtv_graph.get_edge_data(tuple([r]),vehicle)) \
-                                    != type(None):
-                                f_r += 1
-                        
-                        if f_r < 2:
-                            print(clique, 'not all subtrips')
-                            pass
-                        else:
-                        """    
-                        # if all subtrips are present, we know the trip delay and
-                        # the wait time for the first pickup is within feasible 
-                        # limits, just need to check the additional wait time for 
-                        # the second pickup (time between first and second node)
-                        trip_data = rv_graph.get_edge_data(trip[0],trip[1],
-                                                           vehicle)
-                        ad_wait = times[trip_data['path'][0][1]] \
-                                       [trip_data['path'][1][1]]
-                        r1 = trip_data['path'][0][0]
-                        r2 = trip_data['path'][1][0]
-                        
-                        # RW: be careful here - use ".loc" not ".iloc" as 
-                        #     .iloc ignores the label and just uses the position
-                        #     of the record in the dataframe
-                        #     and because we're changing active_requests (adding
-                        #     and removing records), the positions will change
-                        t2,o2,d2,ltp2,bjt2,qos2,_ = active_requests.iloc[r2]
-                        
-                        if (ad_wait + qos2) > MaxWait:
-                            pass
-                        else:
-                            tot_wait = \
-                                  rv_graph.get_edge_data(r1,vehicle)['cost'] \
-                                  + ad_wait + qos2
+
+                        # if the vehicle is empty we add all the individual
+                        # requests in the clique as seperate, one request trips 
+                        # and check all the pairwise shared request trips
+                        if passengers == 0:
+                            for r in trip:
+                                sub_trip = tuple([r])
+                                rtv_graph = add_one_req(rtv_graph, rv_graph, 
+                                            sub_trip, vehicle, active_requests)
                             
-                            rtv_graph.add_edge(trip, vehicle, wait = 
-                                 tot_wait, delay = trip_data['cost'] - tot_wait, 
-                                 edge_type = 'tv', path = trip_data['path'] \
-                                 ,add = 3)
-                            # add 'rt' edges
-                            rtv_graph.add_edge(r1,trip, edge_type = 'rt')
-                            rtv_graph.add_edge(r2,trip, edge_type = 'rt')
-                      
-           
+                            paired_trips = itertools.combinations(trip,2)
+                            
+                            for pair in paired_trips:
+                                pair_trip = tuple(sorted(pair))
+                                rtv_graph = check_two_req(rv_graph,rtv_graph,
+                                        times,active_requests,vehicle,
+                                        pair_trip,MaxWait)
+                        
+                        # if the vehicle has one passenger we check all the
+                        # individual requests to see if they can fit with
+                        # the current passenger
+                        elif passengers == 1:
+                            for r in trip:
+                                sub_trip = tuple([r])
+                                rtv_graph = check_one_req_one_passenger(Taxis,
+                                        rv_graph,rtv_graph,times,
+                                        active_requests,vehicle,sub_trip,
+                                        MaxWait,MaxQLoss)
+                        # otherwise we have a full vehicle and so none of
+                        # these requests can be serviced by this vehicle
+                        else:
+                            pass
+                        
             break
         
         break
