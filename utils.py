@@ -280,7 +280,17 @@ def add_one_req(rtv_graph, rv_graph, trip, vehicle, active_requests):
 # If the added delay to the passenger in the vehicles is within bounds add 
 # the trip to the rtv graph otherwise discard
 def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
-                  vehicle,trip,MaxWait,MaxQLoss):
+                  vehicle,trip,MaxWait):#,MaxQLoss):
+    
+    """
+    RW: I'm a bit confused as to how we account for when / where
+    the passenger (r1) is at this point in time
+    - maybe you've thought through this
+    - we would need to consider when they were picked up
+      to estimate where they are in their journey (I think)
+    - note to self: might need to draw a diagram for this,
+      maybe we can be naive to the current trip progress?
+    """    
     
     # get the passenger's details
     r1 = Taxis[vehicle].passengers[0].req_id
@@ -306,9 +316,12 @@ def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
     
     # if the shortest path cost exceeds the max delays,
     # discard the trip, otherwise add the 'rt' and 'tv' edges
-    if cost > MaxQLoss:
-        pass
-    else:
+    # RW: the shortest path will return path=False, if any
+    # time constraints are broken, so if path should work
+    # if cost > MaxQLoss:
+    #     pass
+    # else:
+    if path:
         tot_wait = qos2 + qos1
         # add 'tv' edge
         rtv_graph.add_edge(trip, vehicle, wait = tot_wait, delay = cost - 
@@ -326,25 +339,53 @@ def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
 # the second pickup (time between first and second node)
 def check_two_req(rv_graph,rtv_graph,times,active_requests,
                   vehicle,trip,MaxWait):
-
-    trip_data = rv_graph.get_edge_data(trip[0],trip[1],vehicle)
-    ad_wait = times[trip_data['path'][0][1]] \
-                   [trip_data['path'][1][1]]
-    r1 = trip_data['path'][0][0]
-    r2 = trip_data['path'][1][0]  
-  
-    qos2 = active_requests.loc[r2]['qos']
     
-    if (ad_wait + qos2) > MaxWait:
-       pass
-    else:
-        qos1 = active_requests.loc[r1]['qos']
-        tot_wait = \
-              qos1 + ad_wait + qos2
+    """
+    I think all the paired costs have been accounted for,
+    we just need to add the journey time from the vehicle
+    current locationt to the first request onto the total
+    cost.
+    """
+
+    # trip_data = rv_graph.get_edge_data(trip[0],trip[1],vehicle)
+    rr_data = rv_graph.get_edge_data(trip[0],trip[1])
+    r1 = rr_data['path'][0][0]
+    r2 = rr_data['path'][1][0] 
+    rv_data = rv_graph.get_edge_data(r1,vehicle)
+    r1_wait_v = rv_data['cost']
+
+    # recalc the waiting times for r1 and r2
+    r2_wait_r1 = times[rr_data['path'][0][1]] \
+                    [rr_data['path'][1][1]]
+    qos2 = active_requests.loc[r2]['qos']
+    qos1 = active_requests.loc[r1]['qos']
+    
+    # RW: updated this to account for the vehicle time to reach the requests
+    if (r1_wait_v + qos1) > MaxWait or \
+        (r2_wait_r1 + qos2 + r1_wait_v) > MaxWait:
         
-        rtv_graph.add_edge(trip, vehicle, wait = 
-             tot_wait, delay = trip_data['cost'] - tot_wait, 
-             edge_type = 'tv', path = trip_data['path'])
+        # we need to keep track of the unnassigned for rebalancing fleet
+        # and vehicles may become available near by in a future window
+        
+        pass
+    
+    else:
+        # qos1 = active_requests.loc[r1]['qos']
+        # tot_wait = \
+        #       qos1 + ad_wait + qos2
+        total_wait = r1_wait_v + qos1 + r2_wait_r1 + qos2
+        rr_wait = total_wait - r1_wait_v
+        delay = rr_data['cost'] - rr_wait
+        
+        # r1_wait_v is the only value not in the request pair cost
+        
+        # all costs are stored on the T,v edge        
+        rtv_graph.add_edge(trip,vehicle,
+                           wait=total_wait,
+                           delay=delay,
+                           edge_type='tv',
+                           path=rr_data['path'])
+        
         # add 'rt' edges
         rtv_graph.add_edge(r1,trip, edge_type = 'rt')
         rtv_graph.add_edge(r2,trip, edge_type = 'rt')

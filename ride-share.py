@@ -146,9 +146,9 @@ def build_shareable(t,requests,times,rv_graph,visualise=False):
     return requests,rv_graph
             
 
-def update_rv(t,requests,times,rv_graph,visualize=False):
+def create_rv_graph(t,requests,times,visualize=False):
     """
-    Updates the RV graph
+    Creates the RV graph
     
     Step 1:
         - update the pairwise shareability graph
@@ -159,6 +159,9 @@ def update_rv(t,requests,times,rv_graph,visualize=False):
           seat en route    
     """
         
+    # rv graph
+    rv_graph = nx.Graph()
+    
     # this is the initial wait time
     requests['qos'] = t - requests['time'].values
     requests['is_alone'] = True
@@ -210,24 +213,120 @@ def update_rv(t,requests,times,rv_graph,visualize=False):
                     
     return rv_graph,requests
 
-def create_rtv_graph(rv,requests):
+def create_rtv_graph(rv,active_requests,times,MaxWait):
     """
     Explore the cliques of the rv graph to find feasible trips
     """
     rtv_graph = nx.Graph()
-
-        ### If you want to visualise the cliques ###
-        # if len(clique) > 4:
-            
-        #     # color the cabs orange
-        #     print(clique)
-        #     subg = rv.subgraph(clique)
-        #     fig,ax = plt.subplots(figsize=(10,6))
-        #     colors = ['tab:orange' if type(n) == str else 'tab:blue' for n in list(subg.nodes)]    
-        #     nx.draw(subg,node_size=30,with_labels=False,node_color=colors,
-        #             alpha=0.5,width=1,ax=ax)
+    
+    ### testing rtv_graph
+    rtv_graph = nx.Graph()
+    for clique in nx.algorithms.clique.find_cliques(rv_graph):
+    
+        ### check if constraints are satisfied to then generate ###
+        ### feasible trips and assign request and vehicles to trips ###
         
-        #     break
+        # If the clique contains only Int64s and no Strings then it
+        # is a number of requests that no vehicle can service, so we
+        # assign them to the "unassigned" node. DO WE JUST DISCARD?
+        # RW- assigning them to an "unassigned" trip sounds right
+        
+        # TF- Thinking about it, I reckon discarding is probably best 
+        # as they are infeasible and won't make any difference to the
+        # optimal solution in the ILP. We can just check after 
+        # optimisation which requests have not been allocated.
+        # RW - not necessarily, we need these guys are used to 
+        # rebalance the fleet
+        if all(isinstance(i, type(clique[0])) for i in clique[1:]):
+            pass
+            """
+            for r in clique:
+            # add 'rt' edge
+                rtv_graph.add_edge(r,"unassigned", edge_type = 'rt')
+            """
+        else:
+            # Sort the clique in request order with vehicle at the end       
+            clique = sorted(clique, key=lambda x: (x is not None, '' 
+                   if isinstance(x, Number) else type(x).__name__, x))
+                                
+            # Get the vehicle name, number of passengers in the vehicle,
+            # trip and the number of requests in the trip
+            vehicle = clique[-1]
+            # print(vehicle)
+            passengers = len(Taxis[vehicle].passengers)
+            
+            # RW: if we're going to use 'trip' as a node id, I think it
+            #     needs to sorted to avoid symetry issues - or use a frozenset
+            trip = tuple(clique[:-1])                    
+            reqs = len(trip)
+            
+            # Start with the "one request + empty vehicle" trips
+            # which will always be feasible because we checked in the rv
+            # graph creation.
+            if reqs == 1 and passengers == 0:
+                
+                rtv_graph = add_one_req(rtv_graph, rv_graph, trip, 
+                                        vehicle, active_requests)
+                                       
+            # then deal with the "one request + non-empty vehicle" trips.
+            # This trip will have a delay > 0 due to deviations
+            # for both passengers
+            elif reqs == 1 and passengers == 1:
+                
+                rtv_graph = check_one_req_one_passenger(Taxis,rv_graph
+                            ,rtv_graph,times,active_requests,vehicle,
+                            trip,MaxWait) #,MaxQLoss)
+                                           
+            # finally deal with the "more than one request" trips
+            else:
+        
+                # if the vehicle is empty we add all the individual
+                # requests in the clique as seperate, one request trips 
+                # and check all the pairwise shared request trips
+                if passengers == 0:
+                    for r in trip:
+                        sub_trip = tuple([r])
+                        rtv_graph = add_one_req(rtv_graph, rv_graph, 
+                                    sub_trip, vehicle, active_requests)
+                    
+                    paired_trips = itertools.combinations(trip,2)
+                    
+                    for pair in paired_trips:
+                        pair_trip = tuple(sorted(pair))
+                        rtv_graph = check_two_req(rv_graph,rtv_graph,
+                                times,active_requests,vehicle,
+                                pair_trip,MaxWait)
+                
+                # if the vehicle has one passenger we check all the
+                # individual requests to see if they can fit with
+                # the current passenger
+                elif passengers == 1:
+                    for r in trip:
+                        sub_trip = tuple([r])
+                        rtv_graph = check_one_req_one_passenger(Taxis,
+                                rv_graph,rtv_graph,times,
+                                active_requests,vehicle,sub_trip,
+                                MaxWait) #,MaxQLoss)
+                # otherwise we have a full vehicle and so none of
+                # these requests can be serviced by this vehicle
+                else:
+                    pass
+                
+    return rtv_graph
+         
+
+### If you want to visualise the cliques ###
+# if len(clique) > 4:
+    
+#     # color the cabs orange
+#     print(clique)
+#     subg = rv.subgraph(clique)
+#     fig,ax = plt.subplots(figsize=(10,6))
+#     colors = ['tab:orange' if type(n) == str else 'tab:blue' for n in list(subg.nodes)]    
+#     nx.draw(subg,node_size=30,with_labels=False,node_color=colors,
+#             alpha=0.5,width=1,ax=ax)
+
+#     break
 
 ### Evaluation
 # create rv graph
@@ -246,7 +345,6 @@ def create_rtv_graph(rv,requests):
 
 # Cycle in hour chunks, so we don't have to check to load
 # new journey times each iteration we only load them on the hour
-rv_graph = nx.Graph()
 active_requests = pd.DataFrame()
 for d in D:
     
@@ -272,113 +370,30 @@ for d in D:
                 new_requests.drop(['window','day','hour'],axis=1)
                 )
                         
-            # step 1: update the rv graph
+            # step 1: create the rv graph
             print(f"RV performance t={t}s, {active_requests.shape[0]} requests:")
             start = time.process_time()
-            rv_graph,active_requests = update_rv(
+            rv_graph,active_requests = create_rv_graph(
                 t,active_requests.copy(),
-                times,rv_graph,visualize=False
+                times,visualize=False
                 )
             end = time.process_time()
             
             # step 2: explore complete - subregions of the rv graph for
             # cliques
             print(f"  - number of edges: {len(list(rv_graph.edges))}")
-            print(f"  - processing time: {end-start:0.1f}s\n")
-            #rtv_graph = create_rtv_graph(rv_graph,active_requests)    
+            print(f"  - processing time: {end-start:0.1f}s")
             
-            
-            ### testing rtv_graph
-            rtv_graph = nx.Graph()
-            for clique in nx.algorithms.clique.find_cliques(rv_graph):
-        
-            ### check if constraints are satisfied to then generate ###
-            ### feasible trips and assign request and vehicles to trips ###
-                
-                # If the clique contains only Int64s and no Strings then it
-                # is a number of requests that no vehicle can service, so we
-                # assign them to the "unassigned" node. DO WE JUST DISCARD?
-                # RW- assigning them to an "unassigned" trip sounds right
-                
-                # TF- Thinking about it, I reckon discarding is probably best 
-                # as they are infeasible and won't make any difference to the
-                # optimal solution in the ILP. We can just check after 
-                # optimisation which requests have not been allocated.
-                if all(isinstance(i, type(clique[0])) for i in clique[1:]):
-                    pass
-                    """
-                    for r in clique:
-                    # add 'rt' edge
-                        rtv_graph.add_edge(r,"unassigned", edge_type = 'rt')
-                    """
-                else:
-                    # Sort the clique in request order with vehicle at the end       
-                    clique = sorted(clique, key=lambda x: (x is not None, '' 
-                           if isinstance(x, Number) else type(x).__name__, x))
-                                        
-                    # Get the vehicle name, number of passengers in the vehicle,
-                    # trip and the number of requests in the trip
-                    vehicle = clique[-1]
-                    # print(vehicle)
-                    passengers = len(Taxis[vehicle].passengers)
-                    
-                    # RW: if we're going to use 'trip' as a node id, I think it
-                    #     needs to sorted to avoid symetry issues - or use a frozenset
-                    trip = tuple(clique[:-1])                    
-                    reqs = len(trip)
-                    
-                    # Start with the "one request + empty vehicle" trips
-                    # which will always be feasible because we checked in the rv
-                    # graph creation.
-                    if reqs == 1 and passengers == 0:
-                        
-                        rtv_graph = add_one_req(rtv_graph, rv_graph, trip, 
-                                                vehicle, active_requests)
-                                               
-                    # then deal with the "one request + non-empty vehicle" trips.
-                    # This trip will have a delay > 0 due to deviations
-                    # for both passengers
-                    elif reqs == 1 and passengers == 1:
-                        
-                        rtv_graph = check_one_req_one_passenger(Taxis,rv_graph
-                                    ,rtv_graph,times,active_requests,vehicle,
-                                    trip,MaxWait,MaxQLoss)
-                                                   
-                    # finally deal with the "more than one request" trips
-                    else:
+            start_rtv = time.process_time()
+            rtv_graph = create_rtv_graph(rv_graph,active_requests,times,MaxWait)    
+            end_rtv = time.process_time()
+            print("RTV performance:")
+            print(f"  - number of edges: {len(list(rtv_graph.edges))}")
+            print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
-                        # if the vehicle is empty we add all the individual
-                        # requests in the clique as seperate, one request trips 
-                        # and check all the pairwise shared request trips
-                        if passengers == 0:
-                            for r in trip:
-                                sub_trip = tuple([r])
-                                rtv_graph = add_one_req(rtv_graph, rv_graph, 
-                                            sub_trip, vehicle, active_requests)
-                            
-                            paired_trips = itertools.combinations(trip,2)
-                            
-                            for pair in paired_trips:
-                                pair_trip = tuple(sorted(pair))
-                                rtv_graph = check_two_req(rv_graph,rtv_graph,
-                                        times,active_requests,vehicle,
-                                        pair_trip,MaxWait)
-                        
-                        # if the vehicle has one passenger we check all the
-                        # individual requests to see if they can fit with
-                        # the current passenger
-                        elif passengers == 1:
-                            for r in trip:
-                                sub_trip = tuple([r])
-                                rtv_graph = check_one_req_one_passenger(Taxis,
-                                        rv_graph,rtv_graph,times,
-                                        active_requests,vehicle,sub_trip,
-                                        MaxWait,MaxQLoss)
-                        # otherwise we have a full vehicle and so none of
-                        # these requests can be serviced by this vehicle
-                        else:
-                            pass
-                        
+            # step 3: optimization
+                       
+                           
             break
         
         break
