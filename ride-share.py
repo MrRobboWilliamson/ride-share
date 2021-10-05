@@ -289,9 +289,13 @@ def create_rtv_graph(rv,active_requests,times,MaxWait):
                         rtv_graph = add_one_req(rtv_graph, rv_graph, 
                                     sub_trip, vehicle, active_requests)
                     
+                    # RW: not sure if it's guaranteed, but I think combinations
+                    # preserves order, so you might not need to sort again
+                    # later on
                     paired_trips = itertools.combinations(trip,2)
                     
                     for pair in paired_trips:
+                        # may not need to sort, can save a little bit of time
                         pair_trip = tuple(sorted(pair))
                         rtv_graph = check_two_req(rv_graph,rtv_graph,
                                 times,active_requests,vehicle,
