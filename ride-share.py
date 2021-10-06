@@ -10,12 +10,14 @@ import time
 import networkx as nx
 from numbers import Number
 import itertools
+from gurobipy import *
 
 # our modules
 from source_data import JourneyTimes, Requests
 from taxis import Taxi, Passenger
 from utils import assign_basejt, plot_requests, shortest_path, is_cost_error \
     , check_two_req, add_one_req, check_one_req_one_passenger
+from allocate import create_ILP_data, allocate_trips
 
 # cost error
 class CostError(Exception):
@@ -291,15 +293,15 @@ def create_rtv_graph(rv,active_requests,times,MaxWait):
                     
                     # RW: not sure if it's guaranteed, but I think combinations
                     # preserves order, so you might not need to sort again
-                    # later on
+                    # later on| TF: Sweet :)
                     paired_trips = itertools.combinations(trip,2)
                     
                     for pair in paired_trips:
                         # may not need to sort, can save a little bit of time
-                        pair_trip = tuple(sorted(pair))
+                        # pair_trip = tuple(sorted(pair))
                         rtv_graph = check_two_req(rv_graph,rtv_graph,
                                 times,active_requests,vehicle,
-                                pair_trip,MaxWait)
+                                pair,MaxWait)
                 
                 # if the vehicle has one passenger we check all the
                 # individual requests to see if they can fit with
@@ -396,8 +398,11 @@ for d in D:
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
             # step 3: optimization
-                       
-                           
+            Vehicles, Requests, Trips, TripCosts, RequestTrips \
+                    = create_ILP_data(rtv_graph)
+            Vehicle_Trips, Requests_Trips = allocate_trips(Vehicles, Requests,
+                                            Trips, TripCosts, RequestTrips)
+            
             break
         
         break
