@@ -269,7 +269,7 @@ def add_one_req(rtv_graph, rv_graph, trip, vehicle, active_requests):
     rtv_graph.add_edge(trip, vehicle, wait = 
             active_requests.loc[trip[0]]['qos'] + \
             rv_graph.get_edge_data(trip[0],vehicle)['cost'],
-            delay = 0, edge_type = 'tv')
+            delay = 0, edge_type = 'tv', rnum = 1)
     # add 'rt' edge
     rtv_graph.add_edge(trip[0],trip, edge_type = 'rt')
     
@@ -325,7 +325,7 @@ def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
         tot_wait = qos2 + qos1
         # add 'tv' edge
         rtv_graph.add_edge(trip, vehicle, wait = tot_wait, delay = cost - 
-                           tot_wait, edge_type = 'tv', path = path)
+                           tot_wait, edge_type = 'tv', rnum = 1, path = path)
         # add 'rt' edge
         rtv_graph.add_edge(r2,trip, edge_type = 'rt')
     
@@ -383,7 +383,8 @@ def check_two_req(rv_graph,rtv_graph,times,active_requests,
         rtv_graph.add_edge(trip,vehicle,
                            wait=total_wait,
                            delay=delay,
-                           edge_type='tv',
+                           edge_type='tv', 
+                           rnum = 2,
                            path=rr_data['path'])
         
         # add 'rt' edges

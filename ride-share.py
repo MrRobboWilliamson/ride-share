@@ -17,7 +17,7 @@ from source_data import JourneyTimes, Requests
 from taxis import Taxi, Passenger
 from utils import assign_basejt, plot_requests, shortest_path, is_cost_error \
     , check_two_req, add_one_req, check_one_req_one_passenger
-from allocate import create_ILP_data_v2, allocate_trips_v2
+from allocate import create_ILP_data_v2, allocate_trips_v2, greedy_assignment
 
 # cost error
 class CostError(Exception):
@@ -319,7 +319,8 @@ def create_rtv_graph(rv,active_requests,times,MaxWait):
                     pass
                 
     return rtv_graph
-         
+
+    
 
 ### If you want to visualise the cliques ###
 # if len(clique) > 4:
@@ -398,8 +399,25 @@ for d in D:
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
             # step 3: optimization
+            """
+            V, R, T, VT, RT = create_ILP_data(rtv_graph)
+            Vehicle_Trips1, Requests_Trips1 = allocate_trips(V, R, T, VT, RT)            
+            """
+            start_rtv = time.process_time()
+            rt_graph = greedy_assignment(rtv_graph, k)
+            end_rtv = time.process_time()
+            print("Greedy Assignment performance:")
+            print(f"  - number of edges: {len(list(rtv_graph.edges))}")
+            print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
+
+            start_rtv = time.process_time()
             V, R, T, VT, RT, TV, TR = create_ILP_data_v2(rtv_graph)
-            Vehicle_Trips, Requests_Trips = allocate_trips_v2(rtv_graph,
+            end_rtv = time.process_time()
+            print("create data performance:")
+            print(f"  - number of edges: {len(list(rtv_graph.edges))}")
+            print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
+
+            Vehicle_Trips, Requests_Trips = allocate_trips_v2(
                                         V, R, T, VT, RT, TV, TR)
             
             break
