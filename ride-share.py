@@ -17,7 +17,7 @@ from source_data import JourneyTimes, Requests
 from taxis import Taxi, Passenger
 from utils import assign_basejt, plot_requests, shortest_path, is_cost_error \
     , check_two_req, add_one_req, check_one_req_one_passenger
-from allocate import create_ILP_data, allocate_trips
+from allocate import create_ILP_data_v2, allocate_trips_v2
 
 # cost error
 class CostError(Exception):
@@ -398,10 +398,9 @@ for d in D:
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
             # step 3: optimization
-            Vehicles, Requests, Trips, TripCosts, RequestTrips \
-                    = create_ILP_data(rtv_graph)
-            Vehicle_Trips, Requests_Trips = allocate_trips(Vehicles, Requests,
-                                            Trips, TripCosts, RequestTrips)
+            V, R, T, VT, RT, TV, TR = create_ILP_data_v2(rtv_graph)
+            Vehicle_Trips, Requests_Trips = allocate_trips_v2(rtv_graph,
+                                        V, R, T, VT, RT, TV, TR)
             
             break
         
