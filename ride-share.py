@@ -195,6 +195,19 @@ def create_rv_graph(t,requests,times,visualize=False):
         
         if len(Taxis[v].passengers) < k:
             
+            """
+            RW:
+            The paper checks if the existing passengers (in the cab) can be
+            satisfied too
+            - We need to know the intermediate nodes to keep track of the cabs,
+              so computing sharability between a passenger
+              and a request uses the next node enroute as the from_node
+              and the time to that node as a ""
+            """
+            
+            # I think this
+            
+            
             # get the requests that are serviceable
             cab = Taxis[v]
             jtfromme = times[cab.loc,:]
@@ -215,7 +228,7 @@ def create_rv_graph(t,requests,times,visualize=False):
                     
     return rv_graph,requests
 
-def create_rtv_graph(rv,active_requests,times,MaxWait):
+def create_rtv_graph(t,rv,active_requests,times,MaxWait):
     """
     Explore the cliques of the rv graph to find feasible trips
     """
@@ -267,15 +280,15 @@ def create_rtv_graph(rv,active_requests,times,MaxWait):
             # graph creation.
             if reqs == 1 and passengers == 0:
                 
-                rtv_graph = add_one_req(rtv_graph, rv_graph, trip, 
-                                        vehicle, active_requests)
+                rtv_graph = add_one_req(t,rtv_graph, rv_graph, trip, 
+                                        vehicle, active_requests,times)
                                        
             # then deal with the "one request + non-empty vehicle" trips.
             # This trip will have a delay > 0 due to deviations
             # for both passengers
             elif reqs == 1 and passengers == 1:
                 
-                rtv_graph = check_one_req_one_passenger(Taxis,rv_graph
+                rtv_graph = check_one_req_one_passenger(t,Taxis,rv_graph
                             ,rtv_graph,times,active_requests,vehicle,
                             trip,MaxWait) #,MaxQLoss)
                                            
@@ -288,8 +301,8 @@ def create_rtv_graph(rv,active_requests,times,MaxWait):
                 if passengers == 0:
                     for r in trip:
                         sub_trip = tuple([r])
-                        rtv_graph = add_one_req(rtv_graph, rv_graph, 
-                                    sub_trip, vehicle, active_requests)
+                        rtv_graph = add_one_req(t,rtv_graph, rv_graph, 
+                                    sub_trip, vehicle, active_requests,times)
                     
                     # RW: not sure if it's guaranteed, but I think combinations
                     # preserves order, so you might not need to sort again
@@ -299,7 +312,7 @@ def create_rtv_graph(rv,active_requests,times,MaxWait):
                     for pair in paired_trips:
                         # may not need to sort, can save a little bit of time
                         # pair_trip = tuple(sorted(pair))
-                        rtv_graph = check_two_req(rv_graph,rtv_graph,
+                        rtv_graph = check_two_req(t,rv_graph,rtv_graph,
                                 times,active_requests,vehicle,
                                 pair,MaxWait)
                 
@@ -309,7 +322,7 @@ def create_rtv_graph(rv,active_requests,times,MaxWait):
                 elif passengers == 1:
                     for r in trip:
                         sub_trip = tuple([r])
-                        rtv_graph = check_one_req_one_passenger(Taxis,
+                        rtv_graph = check_one_req_one_passenger(t,Taxis,
                                 rv_graph,rtv_graph,times,
                                 active_requests,vehicle,sub_trip,
                                 MaxWait) #,MaxQLoss)
@@ -318,9 +331,7 @@ def create_rtv_graph(rv,active_requests,times,MaxWait):
                 else:
                     pass
                 
-    return rtv_graph
-
-    
+    return rtv_graph    
 
 ### If you want to visualise the cliques ###
 # if len(clique) > 4:
@@ -344,11 +355,6 @@ def create_rtv_graph(rv,active_requests,times,MaxWait):
 #     """
 #     Get shareable rides
 #     """
-    
-#     # for each request, find other requests that are after it
-#     for r in requests:
-    
-#     pass
 
 # Cycle in hour chunks, so we don't have to check to load
 # new journey times each iteration we only load them on the hour
@@ -375,7 +381,10 @@ for d in D:
             t = w*delta + delta
             active_requests = active_requests.append(
                 new_requests.drop(['window','day','hour'],axis=1)
-                )
+                )            
+            
+            # step 0: based on current time, process in-flight trips to remove
+            # passengers from cabs if they've finished their journey
                         
             # step 1: create the rv graph
             print(f"RV performance t={t}s, {active_requests.shape[0]} requests:")
@@ -389,10 +398,10 @@ for d in D:
             # step 2: explore complete - subregions of the rv graph for
             # cliques
             print(f"  - number of edges: {len(list(rv_graph.edges))}")
-            print(f"  - processing time: {end-start:0.1f}s")
+            print(f"  - processing time: {end-start:0.1f}s\n")
             
             start_rtv = time.process_time()
-            rtv_graph = create_rtv_graph(rv_graph,active_requests,times,MaxWait)    
+            rtv_graph = create_rtv_graph(t,rv_graph,active_requests,times,MaxWait)    
             end_rtv = time.process_time()
             print("RTV performance:")
             print(f"  - number of edges: {len(list(rtv_graph.edges))}")
@@ -419,6 +428,21 @@ for d in D:
 
             Vehicle_Trips, Requests_Trips = allocate_trips_v2(
                                         V, R, T, VT, RT, TV, TR)
+            
+            
+            # only thing missing is the pickup and drop off times
+            # I don't want to be calculating these twice
+            
+            # these should be calculated in the rtv graph and then
+            # realised on assignment
+
+            # I am exhaused and will look at this in the morning            
+            
+            # step 4: update status
+            # assign passengers to vehicles
+            # print(Vehicle_Trips)
+            
+            #
             
             break
         

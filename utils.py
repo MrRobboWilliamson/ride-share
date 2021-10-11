@@ -9,6 +9,7 @@ from IPython.display import clear_output, display
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import pandas as pd
+from taxis import Passenger
 
 class ConsoleBar:
     def __init__(self,num_ticks,length=100):
@@ -263,15 +264,27 @@ def shortest_path(pair,times,MaxWait):
 # 'tv' edge with those two values and a 'rt' edge between the
 # request and the trip. NOTE: Trips are tuples so that multi
 # request trips can be accomodated.
-def add_one_req(rtv_graph, rv_graph, trip, vehicle, active_requests):
+def add_one_req(t,rtv_graph,rv_graph,trip,vehicle,active_requests,times):
     
+    # get the pickup and drop off times to satisfy the trip with
+    # this vehicle
+    request = trip[0]
+    details = active_requests.loc[request]
+    wait = rv_graph.get_edge_data(request,vehicle)['cost']
+    pickup = t + wait
+    dropoff = pickup + times[details['from_node']][details['to_node']]
+    
+    # this data will be used to realise the pickups and drop offs
+    orders = {
+        request:dict(pickup_time=pickup,dropoff_time=dropoff)
+    }
+    
+    # add 'tv' edge
+    rtv_graph.add_edge(trip,vehicle,wait=details['qos']+wait,
+            delay=0,edge_type='tv',rnum=1,orders=[req_order,])        
+        
     # add 'rt' edge
-    rtv_graph.add_edge(trip, vehicle, wait = 
-            active_requests.loc[trip[0]]['qos'] + \
-            rv_graph.get_edge_data(trip[0],vehicle)['cost'],
-            delay = 0, edge_type = 'tv', rnum = 1)
-    # add 'rt' edge
-    rtv_graph.add_edge(trip[0],trip, edge_type = 'rt')
+    rtv_graph.add_edge(trip[0],trip,edge_type='rt')
     
     return rtv_graph
 
@@ -279,7 +292,7 @@ def add_one_req(rtv_graph, rv_graph, trip, vehicle, active_requests):
 # check a one request trip with a vehicle that already has a passenger in it.
 # If the added delay to the passenger in the vehicles is within bounds add 
 # the trip to the rtv graph otherwise discard
-def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
+def check_one_req_one_passenger(t,Taxis,rv_graph,rtv_graph,times,active_requests,
                   vehicle,trip,MaxWait):#,MaxQLoss):
     
     """
@@ -293,10 +306,11 @@ def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
     """    
     
     # get the passenger's details
-    r1 = Taxis[vehicle].passengers[0].req_id
+    p1 = Taxis[vehicle].passengers[0]
+    r1 = p1.req_id
     o1 = Taxis[vehicle].loc # passenger is in the taxi
-    d1 = Taxis[vehicle].passengers[0].drop_off_node
-    qos1 = Taxis[vehicle].passengers[0].wait_time
+    d1 = p1.drop_off_node
+    qos1 = p1.wait_time
     bjt1 = times[o1][d1] # whatever is left of the journey
     
     # get the new pick up request details
@@ -322,12 +336,27 @@ def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
     #     pass
     # else:
     if path:
+        
+        # RW: if we've found a valid path, do we need to update the rv_graph?
+        # create the order details for this vehicle-trip combo
+        # this data will be used to realise the pickups and drop offs
+        
+        ## how to recalculate the dropoff time for r1
+        
+        
+        orders = {
+            r1:dict(pickup_time=p1.get_pickup_time(),
+                    dropoff_time=r1_dropoff),
+            r2:dict(pickup_time=pickup,dropoff_time=dropoff)            
+        }
+        
         tot_wait = qos2 + qos1
+        
         # add 'tv' edge
-        rtv_graph.add_edge(trip, vehicle, wait = tot_wait, delay = cost - 
-                           tot_wait, edge_type = 'tv', rnum = 1, path = path)
+        rtv_graph.add_edge(trip,vehicle,wait=tot_wait,delay=cost - 
+                           tot_wait,edge_type='tv',rnum=1,path=path)
         # add 'rt' edge
-        rtv_graph.add_edge(r2,trip, edge_type = 'rt')
+        rtv_graph.add_edge(r2,trip,edge_type='rt')
     
     return rtv_graph
 
@@ -337,7 +366,7 @@ def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
 # the wait time for the first pickup is within feasible 
 # limits, just need to check the additional wait time for 
 # the second pickup (time between first and second node)
-def check_two_req(rv_graph,rtv_graph,times,active_requests,
+def check_two_req(t,rv_graph,rtv_graph,times,active_requests,
                   vehicle,trip,MaxWait):
     
     """
@@ -379,7 +408,7 @@ def check_two_req(rv_graph,rtv_graph,times,active_requests,
         
         # r1_wait_v is the only value not in the request pair cost
         
-        # all costs are stored on the T,v edge        
+        # all costs are stored on the T,v edge   
         rtv_graph.add_edge(trip,vehicle,
                            wait=total_wait,
                            delay=delay,
@@ -392,3 +421,19 @@ def check_two_req(rv_graph,rtv_graph,times,active_requests,
         rtv_graph.add_edge(r2,trip, edge_type = 'rt')
     
     return rtv_graph
+
+
+def process_assignments(VT,Taxis,requests,):
+    """
+    This function needs to:
+    - create passengers
+    - put them in cabs
+    - update status'
+    - tell cabs or passengers when they will 
+      be dropped off    
+    """
+
+    for trip in VT:        
+        v, load = trip
+        for p in load:
+            

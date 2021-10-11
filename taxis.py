@@ -52,7 +52,6 @@ class Taxi():
         passenger.set_status(2)
         passenger.set_pickup_time(current_time)
         passenger.set_wait_time(current_time - passenger.get_req_time())
-        
                 
         
     def drop_off_passenger(self, passenger, current_time):
@@ -82,6 +81,7 @@ class Taxi():
         """
         self.current_route.append(route)
         
+        
     def toggle_availability(self):
         """
         toggles availability status
@@ -101,7 +101,7 @@ class Passenger():
     """
     
     def __init__(self, req_id, pickup_node, drop_off_node, req_time, base_jt,
-                 init_wait):
+                 init_wait,max_wait,max_delay):
         
         # create variables
         self.req_id = req_id
@@ -114,7 +114,10 @@ class Passenger():
         self.pickup_time = -1
         self.drop_off_time = -1
         self.wait_time = 0
+        self.delay_time = 0
         self.travel_time = 0
+        self.max_wait = max_wait
+        self.max_delay = max_delay
      
         
     def get_id(self):
@@ -124,11 +127,14 @@ class Passenger():
         """
         return self.req_id
     
+    
     def get_total_delay(self):
         return self.wait_time + self.get_travel_delay()
     
+    
     def get_travel_delay(self):        
         return max(0,self.travel_time - self.base_jt)
+    
  
     def get_pickup_node(self):
         
@@ -205,6 +211,10 @@ class Passenger():
         """
         Sets the passenger's pickup time
         """
+        
+        # check pickup
+        assert time - self.req_time <= self.max_wait
+        
         self.pickup_time = time
         
         
@@ -219,6 +229,16 @@ class Passenger():
         """
         Sets the passenger's drop off time
         """
+        
+        # check dropoff
+        # set the final travel time
+        self.set_travel_time(time-self.pickup_time)
+        
+        # check this against the base journey time
+        assert self.get_travel_time() - self.base_jt <= self.max_delay
+        self.delay_time = self.travel_time - self.base_jt
+
+        # finally set the drop off time        
         self.drop_off_time = time
 
 

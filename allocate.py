@@ -163,6 +163,10 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, TR):
     for v in V:
         for t in VT[v].keys():
             if X[v,t].x > 0:
+                
+                if len(t) > 1:
+                    print((v,t))
+                
                 Vehicle_Trips.append((v, t))
     
     # get all of the assigned request-trip combinations
