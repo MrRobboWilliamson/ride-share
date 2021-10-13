@@ -108,12 +108,15 @@ def greedy_assignment(rtv_graph, k):
     return rtv_graph
 
 
-def allocate_trips_v2(V, R, T, VT, RT, TV, TR):    
+def allocate_trips_v2(V, R, T, VT, RT, TV, TR, suppress_output=False):    
 
     max_psg = 2 # maximum Requests per taxi
     unallocated_cost = 99999 # arbitrary cost of not allocating a passenger
     
     m = Model('Allocations')
+    
+    if suppress_output:
+        m.setParam('OutputFlag',0)
     
     # X is 1 if vehicle v is assigned to trip t, 0 otherwise
     X = {(v,t): m.addVar(vtype=GRB.BINARY) for v in V 
@@ -155,7 +158,6 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, TR):
         # each request must either be serviced by a trip or be unallocated
         m.addConstr(quicksum(Y[r,t] for t in RT[r]) + Z[r] == 1)
 
-    
     m.optimize()
 
     # get all of the assigned vehicle-trips combinations    
@@ -164,8 +166,8 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, TR):
         for t in VT[v].keys():
             if X[v,t].x > 0:
                 
-                if len(t) > 1:
-                    print((v,t))
+                # if len(t) > 1:
+                #     print((v,t))
                 
                 Vehicle_Trips.append((v, t))
     
@@ -266,16 +268,24 @@ def allocate_trips(Vehicles, Requests, Trips, TripCosts, RequestTrips):
     
     m.optimize()
     
-    Vehicle_Trips = []
-    for v in V:
-        for t in T:
-            if X[v,t].x > 0:
-                Vehicle_Trips.append((Vehicles[v], Trips[t]))
+    Trips = dict()
+    for t in T:
+        for v in V:
+            if X[v,t].x > 0.9:
+                Trips[t] = v
     
-    Request_Trips = []
-    for r in R:
-        for t in T:
-            if Y[r,t].x > 0:
-                Request_Trips.append((Requests[r], Trips[t]))
+    return Trips
     
-    return Vehicle_Trips, Request_Trips 
+    # Vehicle_Trips = []
+    # for v in V:
+    #     for t in T:
+    #         if X[v,t].x > 0:
+    #             Vehicle_Trips.append((Vehicles[v], Trips[t]))
+    
+    # Request_Trips = []
+    # for r in R:
+    #     for t in T:
+    #         if Y[r,t].x > 0:
+    #             Request_Trips.append((Requests[r], Trips[t]))
+    
+    # return Vehicle_Trips, Request_Trips 

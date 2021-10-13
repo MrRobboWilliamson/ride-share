@@ -12,7 +12,7 @@ class Taxi():
     Creates a taxi for our simulation
     """
     
-    def __init__(self, taxi_id, max_capacity,init_loc):
+    def __init__(self,taxi_id,max_capacity,init_loc,logger):
         
         # create variables
         self.taxi_id = taxi_id
@@ -20,11 +20,13 @@ class Taxi():
         self.passengers = []
         self.current_route = []
         self.loc = init_loc
+                
+        # parameters for tracking trips and availability
+        self.current_timetable_ = None
         
-        # fields for checking for availability
-        self.available = True
-        self.next_available_time = None
-        self.next_available_loc = None
+        # for recording events - this is a pointer to a central log
+        self.logger = logger
+        
            
     def get_id(self):
         
@@ -74,19 +76,73 @@ class Taxi():
         return self.current_route
     
     
-    def set_current_route(self, route):
+    def set_trip(self,path,current_time,requests,path_finder):
+        """
+        Sets a timetable and other things
         
+        based on a trip allocation, and the current passengers
+
+        Returns
+        -------
+        None.
         """
-        Sets the taxi's current route
-        """
-        self.current_route.append(route)
+        
+        # might need to be an update rather than a new tt,
+        # TODO: check this
+        ### THIS FUNCTION ASSUMES THAT PASSENGER DROP NODES ARE IN PATH ###
+        self.current_timetable_ = path_finder.get_timetable(
+            path,current_time,requests,self.passengers
+            )
         
         
-    def toggle_availability(self):
+    def find_me(self,current_time):
         """
-        toggles availability status
+        Returns time to arrive at and next node.
+        
+        If the cab is idle, return the current time and location
         """
-        self.available = not(self.available)
+        
+        # if the cab is available just return the current time and location
+        if self.is_idle():            
+            return 0,self.loc
+
+        # otherwise check the timetable for the next node
+        # return the time to get there and the node
+        else:
+            next_arrival = self.current_timetable_[
+                self.current_timetable_[:,0]>=current_time
+                ][0,:]
+            return next_arrival[0]-current_time,next_arrival[1]
+        
+        
+    def is_available(self,time):
+        """
+        Checks availability
+        """
+        
+        # is there a passenger or has a trip been assigned?
+        return len(self.passengers) < self.max_capacity
+    
+    
+    def is_idle(self,time):
+        """
+        Checks if the cab has no passengers or a trip allocated        
+        """
+        return len(self.passengers) == 0 and self.current_timetable_ is None
+    
+    def check_availability(self,current_time,requests,times):
+        """
+        Checks if we can pickup any of these requests
+        """
+        
+        # if we're idle - simple check
+        
+        # if we have passengers - check when capacity will be available
+        # and in time for the request
+        
+        # if
+        
+        pass
         
         
     def __repr__(self):
@@ -118,7 +174,10 @@ class Passenger():
         self.travel_time = 0
         self.max_wait = max_wait
         self.max_delay = max_delay
-     
+        
+        # we check against this time for passengers in cabs
+        # if the cab can be diverted to pickup another passenger
+        self.earliest_arrival = req_time + base_jt
         
     def get_id(self):
         

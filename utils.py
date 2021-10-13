@@ -43,6 +43,32 @@ class ConsoleBar:
         clear_output(wait=True)
         print(bar_str.format(progress, '.'*bar_ticks+'>'), end=print_end)
         
+
+class Logger:
+    '''
+    to pass to passengers and taxis to record events
+    '''
+    def __init__(self):
+        self.all_records = list()
+        
+    def make_log(self,time,passenger,cab,action,location=None):
+        """
+        Use this to record:
+            - when a trip is allocated or updated
+            - when a passenger is picked up or dropped off        
+        """
+        self.all_records.append(
+            dict(time_stamp=time,
+                 passenger_id=passenger,
+                 cab_id=cab,
+                 event=action,
+                 location=location)
+            )
+        
+    def get_logs(self):
+        return pd.DataFrame(self.all_records)
+    
+        
 def is_cost_error(cost,path,pair,times,show=False):
     """
     Check the costs
@@ -264,24 +290,25 @@ def shortest_path(pair,times,MaxWait):
 # 'tv' edge with those two values and a 'rt' edge between the
 # request and the trip. NOTE: Trips are tuples so that multi
 # request trips can be accomodated.
-def add_one_req(t,rtv_graph,rv_graph,trip,vehicle,active_requests,times):
+def add_one_req(t,rtv_graph,rv_graph,trip,cab,active_requests):
     
     # get the pickup and drop off times to satisfy the trip with
     # this vehicle
     request = trip[0]
     details = active_requests.loc[request]
-    wait = rv_graph.get_edge_data(request,vehicle)['cost']
-    pickup = t + wait
-    dropoff = pickup + times[details['from_node']][details['to_node']]
+    wait = rv_graph.get_edge_data(request,cab.cab_id)['cost']
     
-    # this data will be used to realise the pickups and drop offs
-    orders = {
-        request:dict(pickup_time=pickup,dropoff_time=dropoff)
-    }
+    # we need to record the final path for this vehicle satisfying
+    # this trip
+    _,location=cab.find_me(t)
+    
+    # the path here will just be to go from my current
+    # location to pickup and drop off the request
+    path = [location,details['from_node'],details['to_node']]
     
     # add 'tv' edge
     rtv_graph.add_edge(trip,vehicle,wait=details['qos']+wait,
-            delay=0,edge_type='tv',rnum=1,orders=[req_order,])        
+            delay=0,edge_type='tv',rnum=1,path=path)    
         
     # add 'rt' edge
     rtv_graph.add_edge(trip[0],trip,edge_type='rt')
@@ -342,14 +369,7 @@ def check_one_req_one_passenger(t,Taxis,rv_graph,rtv_graph,times,active_requests
         # this data will be used to realise the pickups and drop offs
         
         ## how to recalculate the dropoff time for r1
-        
-        
-        orders = {
-            r1:dict(pickup_time=p1.get_pickup_time(),
-                    dropoff_time=r1_dropoff),
-            r2:dict(pickup_time=pickup,dropoff_time=dropoff)            
-        }
-        
+                
         tot_wait = qos2 + qos1
         
         # add 'tv' edge
@@ -423,17 +443,34 @@ def check_two_req(t,rv_graph,rtv_graph,times,active_requests,
     return rtv_graph
 
 
-def process_assignments(VT,Taxis,requests,):
+def update_current_state(current_time,active_requests,Taxis):
     """
-    This function needs to:
-    - create passengers
-    - put them in cabs
-    - update status'
-    - tell cabs or passengers when they will 
-      be dropped off    
+    process trip data of each taxi to req    
     """
+    
+    ### DOESN'T DO ANYTHING YET ###
+    
+    return active_requests
 
-    for trip in VT:        
-        v, load = trip
-        for p in load:
-            
+
+def process_assignments(current_time,Trips,Taxis,active_requests,
+                        path_finder,rtv_graph):
+    # """
+    # This function needs to:
+    # - create passengers
+    # - put them in cabs
+    # - update status'
+    # - tell cabs or passengers when they will 
+    #   be dropped off    
+    # """
+    allocated_requests = set()
+    for trip_requests,cab_id in Trips.items():
+        
+        # to add a trip to a cab, we need a planned path      
+        path = rtv_graph.get_edge_data(trip_requests,cab_id)['path']
+        Taxis[cab_id].set_trip(path,
+                               current_time,
+                               active_requests.loc[trip_requests],
+                               path_finder)
+        
+        allocated_requests |= set(trip_requests)
