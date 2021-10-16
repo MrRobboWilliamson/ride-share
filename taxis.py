@@ -6,8 +6,10 @@ Created on Tue Sep 21 16:03:29 2021
 """
 
 import pandas as pd
-
 delta = 30
+
+class PickupError(Exception):
+    pass
 
 class Taxi():
     
@@ -33,6 +35,9 @@ class Taxi():
         # for recording events - this is a pointer to a central log
         self.logger = logger
         
+        # flag for error checking
+        self.flag = False
+        
            
     def get_id(self):
         
@@ -55,6 +60,7 @@ class Taxi():
         """
 
         # get the timetable up to now for realization
+        # temp = self.current_timetable_.copy()
         to_realize = self.current_timetable_[
             self.current_timetable_['time']<=current_time
             ]
@@ -66,16 +72,39 @@ class Taxi():
         # if the timetable is empty, set the current location
         # of the cab to the last location in the timetable
         if self.current_timetable_.empty:
-            self.loc = to_realize['loc'][-1]
-        
+            self.loc = to_realize['loc'].values[-1]
+                    
         # get the pickups and dropoffs
         pickups = to_realize[to_realize['pickup'].notnull()]
         dropoffs = to_realize[to_realize['dropoff'].notnull()]
+        
+        # errors = [2209,289,2217,716,2983,293,374]
+        # if self.flag or pickups['pickup'].isin(errors):
+        #     print()
+        #     print(self)
+        #     print(to_realize)
+        #     print(self.current_timetable_)
+        #     print(self.passengers)
+        #     print(self.trip_data)
+        #     self.flag = True
         
         # go through the pickups
         for idx,time,loc,r,_ in pickups.to_records():
                         
             # pickup the passenger
+            # try:
+                # passenger = self.pickup_passenger(r,loc,time)
+                # self.trip_data[r]['passenger'] = passenger
+            # except PickupError as pe:
+            #     print(self,passenger)
+            #     print(to_realize)
+            
+            # this is to stop the stupid thing from adding
+            # passengers twice!!
+            # if len(self.passengers) > 0:
+            #     if any([r==p.req_id for p in self.passengers]):
+            #         continue
+                    
             passenger = self.pickup_passenger(r,loc,time)
             self.trip_data[r]['passenger'] = passenger
                 
@@ -83,8 +112,7 @@ class Taxi():
         for idx,time,loc,_,r in dropoffs.to_records():
             
             # pop the trip details
-            #  - which includes a ref to the passenger
-            dets = self.trip_data.pop(r)
+            dets = self.trip_data.pop(r) 
             self.dropoff_passenger(dets['passenger'],loc,time)
         
         # return a list of the pickups to remove from active requests.
@@ -146,6 +174,16 @@ class Taxi():
         passenger.set_status(2)
         passenger.set_pickup_time(time) # this will check the wait constraint
         
+        # try:        
+        #     passenger.set_pickup_time(time) # this will check the wait constraint
+        #     if r == 61:
+        #         print(passenger)
+        # except AssertionError as ae:
+        #     print("We have a problem!")
+        #     print(f"  - passenger",r)
+        #     print(f"  - pickup time: {time}, request time: {self.trip_data[r]['time']}")
+        #     raise PickupError(passenger)
+        
         # record the event
         self.logger.make_log(
             time,r,self.taxi_id,action='pickup',location=loc
@@ -199,11 +237,22 @@ class Taxi():
         # update the timetable. drop dups incase we have overlaps
         # test without if it's slow
         time,first_node = self.find_me(current_time)
-        self.current_timetable_ = self.current_timetable_.append(
-            path_finder.get_timetable(
-                first_node,path,time,requests
-                )
-            ).drop_duplicates().reset_index(drop=True)
+        
+        # if 633 in requests.index:
+        #     print(requests)
+        #     print(current_time)
+        #     print(time)
+        #     print(self.trip_data)
+        
+        # self.current_timetable_ = self.current_timetable_.append(
+        #     path_finder.get_timetable(first_node,path,time
+        #         )
+        #     ).sort_values(['time']).drop_duplicates().reset_index(drop=True)
+        
+        self.current_timetable_ = path_finder.get_timetable(
+            first_node,path,time
+            )
+                # ).sort_values(['time']).drop_duplicates().reset_index(drop=True)
                         
         
     def find_me(self,current_time):
@@ -233,7 +282,7 @@ class Taxi():
        
     def __repr__(self):
         
-        return f"<Id: T{self.taxi_id}, Loc: {self.loc}>"
+        return f"<Id: {self.taxi_id}, Loc: {self.loc}>"
     
 
 class Passenger():
@@ -358,11 +407,14 @@ class Passenger():
         """
         
         # check pickup
-        assert time - self.req_time <= self.max_wait
+        try:
+            assert time - self.req_time <= self.max_wait            
+            self.wait_time = time - self.req_time
+        except AssertionError as ae:
+            print(f"\nLate pickup {self}: +{self.wait_time}s\n")
         
         # assign pickup and wait times        
         self.pickup_time = time
-        self.wait_time = time - self.req_time
         
         
     def get_drop_off_time(self):
@@ -381,9 +433,13 @@ class Passenger():
         # set the final travel time
         self.travel_time = time - self.pickup_time
         
-        # check this against the base journey time
-        assert self.travel_time - self.base_jt <= self.max_delay
-        self.delay_time = self.travel_time - self.base_jt
+        try:
+            # check this against the base journey time
+            assert self.travel_time - self.base_jt <= self.max_delay
+            self.delay_time = self.travel_time - self.base_jt
+        except AssertionError as ae:
+            print(f"\nLate dropoff {self}: +{self.delay_time}s\n")
+            
 
         # finally set the drop off time        
         self.drop_off_time = time
@@ -401,6 +457,10 @@ class Passenger():
         Gets the passenger's travel time
         """
         return self.travel_time
+    
+    def __repr__(self):
+        
+        return f"<req_id: {self.req_id}>"
         
         
 # if __name__ == "__main__":

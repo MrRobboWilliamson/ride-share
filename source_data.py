@@ -69,31 +69,9 @@ class ShortestPathFinder:
             path = self.memory_[(source,target)]
             
         return path
-    
-    
-    def assign_events(self,time,node,requests):
-        """
-        check if a request has an event at this node, and 
-        if so, create an event for the timetable
-        ensure no duplicate requests
-        """
         
-        # check for any pickups or dropoffs in the first node
-        picks = requests[requests['from_node']==node].index.to_list()
-        drops = requests[requests['to_node']==node].index.to_list()
-                
-        # init the timetable and add any initial pickups or dropoffs
-        events = [[time,node,np.nan,np.nan],] # first event is the next loc
-        for pick in picks:
-            events.append([time,node,pick,np.nan])
-            
-        for drop in drops:
-            events.append([time,node,np.nan,drop])
-            
-        return events
     
-    
-    def get_timetable(self,first_node,path,time,requests):
+    def get_timetable(self,first_node,path,time):
         """
         Parameters
         ----------
@@ -108,33 +86,55 @@ class ShortestPathFinder:
         my brain is shutting down
         """
         
-        # check for any pickups or dropoffs in the first node
-        # print(first_node)
-        timetable = self.assign_events(time,first_node,requests)
-        # print("\nGet timetable")
-        # print(timetable)
-                    
         # this is the allocated path from the rtv-graph - just need to 
         # insert the first node (cab's expected location)
-        path = [first_node]+[step[1] for step in path]
+        path = [(None,first_node,False),]+[step for step in path]
+        events = [[time,first_node,None,None],]
+        picked = []   
         for source,target in zip(path[:-1],path[1:]):
             
             # get the detailed steps in the path
-            route = self.shortest_between_points(source,target)
-            # print()
-            # print(source,target)
-            # print(route)
+            route = self.shortest_between_points(source[1],target[1])
+            
+            # if we havn't seen this request, it's a pickup
+            # otherwise a dropoff
+            # is_pickup = False
+            # if target[0] not in picked:
+            #     picked.append(target[0])
+            #     is_pickup = True 
+            
+            # if we have colocated events, then just
+            # process the target and there is no time adjustment
+            if len(route) == 1:                
+                if target[2]:
+                    events.append(
+                        [time,target[1],target[0],None]
+                        )
+                else:
+                    events.append(
+                        [time,target[1],None,target[0]]
+                        )
 
             for from_,to_ in zip(route[:-1],route[1:]):
-                # get the step time
-                jt = self.times[from_][to_]
+                # get the step time and step in time
+                time += self.times[from_][to_]
                 
-                # add the step to the timetable
-                time += jt
-                timetable += self.assign_events(time,to_,requests)
-                  
+                if to_ == target[1] and target[2]:
+                    events.append(
+                        [time,to_,target[0],None]
+                        )
+                elif to_ == target[1] and not target[2]:
+                    events.append(
+                        [time,to_,None,target[0]]
+                        )
+                else:
+                    events.append(
+                        [time,to_,None,None]
+                        )                    
+    
+            
         return pd.DataFrame(
-            timetable,columns=['time','loc','pickup','dropoff']
+            events,columns=['time','loc','pickup','dropoff']
             )
     
 

@@ -7,9 +7,9 @@ Created on Sat Sep 25 08:46:40 2021
 """
 from IPython.display import clear_output, display
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
+# from matplotlib.lines import Line2D
 import pandas as pd
-from taxis import Passenger
+# from taxis import Passenger
 import os
 from pathlib import Path
 
@@ -287,10 +287,10 @@ def shortest_path(pair,times,MaxWait):
                 first_dropoff_cost + second_dropoff_cost
                     
             if total_cost < best_path[0]:
-                path = [(first_pickup,first_node),
-                        (second_pickup,second_node),
-                        (first_dropoff,third_node),
-                        (second_dropoff,fourth_node)]                
+                path = [(first_pickup,first_node,True),
+                        (second_pickup,second_node,True),
+                        (first_dropoff,third_node,False),
+                        (second_dropoff,fourth_node,False)]                
                 best_path = total_cost,path
         
     return best_path
@@ -308,7 +308,6 @@ def shortest_withpassenger(passenger,start_time,start_loc,
     """    
 
     # get the passenger current state
-    p_latest = passenger.latest_arrival
     pdrop_loc = passenger.drop_off_node
     
     # shortest time to drop the passenger
@@ -322,9 +321,9 @@ def shortest_withpassenger(passenger,start_time,start_loc,
     
     # generate options
     options = [
-        [(passenger.req_id,pdrop_loc),(req_id,o),(req_id,d)], # drop passenger first
-        [(req_id,o),(passenger.req_id,pdrop_loc),(req_id,d)], # pick req & drop pass
-        [(req_id,o),(req_id,d),(passenger.req_id,pdrop_loc)]  # pick & drop req first
+        [(passenger.req_id,pdrop_loc,False),(req_id,o,True),(req_id,d,False)], # drop passenger first
+        [(req_id,o,True),(passenger.req_id,pdrop_loc,False),(req_id,d,False)], # pick req & drop pass
+        [(req_id,o,True),(req_id,d,False),(passenger.req_id,pdrop_loc,False)]  # pick & drop req first
         ]
     
     best_path = float('inf'),False    
@@ -385,7 +384,7 @@ def shortest_withpassenger(passenger,start_time,start_loc,
         if cost < best_path[0]:
             best_path = cost,combo
             
-    return best_path
+    return wait_cost,best_path[1]
     
 
 # add a feasible single request trip to the rtv graph
@@ -403,8 +402,8 @@ def add_one_req(t,rtv_graph,rv_graph,trip,vehicle,active_requests):
         
     # the path here will just be to go from my current
     # location to pickup and drop off the request
-    path = [(request,details['from_node']),
-            (request,details['to_node'])]
+    path = [(request,details['from_node'],True),
+            (request,details['to_node'],False)]
     
     # add 'tv' edge
     rtv_graph.add_edge(trip,vehicle,wait=details['qos']+wait,
@@ -434,14 +433,14 @@ def check_one_req_one_passenger(t,Taxis,rv_graph,rtv_graph,times,active_requests
     
     # get the passenger's details
     p1 = Taxis[vehicle].passengers[0]
-    r1 = p1.req_id
+    # r1 = p1.req_id
     
     # get the taxi's next location
-    _,o1 = Taxis[vehicle].find_me(t)
+    t1,o1 = Taxis[vehicle].find_me(t)
     # o1 = Taxis[vehicle].loc # passenger is in the taxi
-    d1 = p1.drop_off_node
+    # d1 = p1.drop_off_node
     qos1 = p1.wait_time
-    bjt1 = p1.base_jt
+    # bjt1 = p1.base_jt
     # bjt1 = times[o1][d1] # whatever is left of the journey
     
     # get the new pick up request details
@@ -452,14 +451,22 @@ def check_one_req_one_passenger(t,Taxis,rv_graph,rtv_graph,times,active_requests
     # here we need to check if we drop off the passenger first
     # or pickup the request first???
     # build the data pair for the shortest path algorithm
-    pair = dict([(r1,dict(
-                route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
-                (r2,dict(
-                route=(o2,d2),other=r1,wait=qos2,base=bjt2))
-                ])
+    # pair = dict([(r1,dict(
+    #             route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
+    #             (r2,dict(
+    #             route=(o2,d2),other=r1,wait=qos2,base=bjt2))
+    #             ])
     
     # get the cost and shortest path
-    cost,path = shortest_path(pair,times,MaxWait)
+    # cost,path = shortest_path(pair,times,MaxWait)
+    cost,path = shortest_withpassenger(
+                        p1,t1,o1,
+                        dict(req_id=r2,route=(o2,d2),
+                             req_t=t2,base=bjt2),
+                        times,MaxWait
+                        )  
+    
+    # print("path",path)
     
     # if the shortest path cost exceeds the max delays,
     # discard the trip, otherwise add the 'rt' and 'tv' edges
@@ -479,8 +486,8 @@ def check_one_req_one_passenger(t,Taxis,rv_graph,rtv_graph,times,active_requests
         tot_wait = qos2 + qos1
         
         # add 'tv' edge
-        rtv_graph.add_edge(trip,vehicle,wait=tot_wait,delay=cost - 
-                           tot_wait,edge_type='tv',rnum=1,path=path)
+        rtv_graph.add_edge(trip,vehicle,wait=tot_wait,delay=cost, #-tot_wait,
+                           edge_type='tv',rnum=1,path=path)
         # add 'rt' edge
         rtv_graph.add_edge(r2,trip,edge_type='rt')
     
@@ -560,6 +567,9 @@ def update_current_state(current_time,active_requests,Taxis):
     picked_up = []
     for cab in Taxis.values():
         
+        # if len(cab.passengers) >= 2:
+        #     print(cab,len(cab.passengers))
+        
         # skip if the cab is idle
         if cab.is_idle():
             # print('idle')
@@ -590,15 +600,25 @@ def process_assignments(current_time,Trips,Taxis,active_requests,
         Taxis[cab_id].set_trip(path,
                                current_time,
                                active_requests.loc[list(trip_requests)],
-                               path_finder)
+                               path_finder
+                               )
         
         allocated_requests |= set(trip_requests)
         allocated_taxis.add(cab_id)
         
+        # if 375.0 in trip_requests:
+        #     print("From trip requests")
+        #     print(active_requests.loc[list(trip_requests)])
+        
     ignored = active_requests[
         ~active_requests.index.isin(allocated_requests)
         ]
+    
+    # candidate idle cabs
     idle = CabIds - allocated_taxis
+    
+    # need if these cabs are actually idle
+    idle = [v for v in idle if Taxis[v].is_idle()]
     
     return ignored,idle
     

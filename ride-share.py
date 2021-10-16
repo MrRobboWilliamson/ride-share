@@ -4,19 +4,18 @@ This is the model
 """
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
+# import matplotlib.pyplot as plt
+# from matplotlib.lines import Line2D
 import time
 import networkx as nx
 from numbers import Number
 import itertools
-from gurobipy import *
 
 # our modules
 from source_data import JourneyTimes, Requests
-from taxis import Taxi, Passenger
+from taxis import Taxi
 from utils import (
-    Logger,assign_basejt,plot_requests,shortest_path,is_cost_error,
+    Logger,assign_basejt,plot_requests,shortest_path, #is_cost_error,
     check_two_req, add_one_req, check_one_req_one_passenger,
     process_assignments,update_current_state,shortest_withpassenger
     )                   
@@ -168,7 +167,7 @@ def build_shareable(t,requests,times,rv_graph,visualise=False):
     return requests,rv_graph
             
 
-def create_rv_graph(t,requests,times,visualize=False):
+def create_rv_graph(t,requests,times): #,visualize=False):
     """
     Creates the RV graph
     
@@ -194,20 +193,20 @@ def create_rv_graph(t,requests,times,visualize=False):
     end = time.process_time()
     print(f"  - build_shareable function {end-start:0.1f}s")
     
-    if visualize:
-        ### THIS WON'T WORK - NEEDS TO BE UPDATED ###
-        # randomly get a request that is shareable
-        r = list(np.random.choice(list(rv_graph.keys())))[0]
+    # if visualize:
+    #     ### THIS WON'T WORK - NEEDS TO BE UPDATED ###
+    #     # randomly get a request that is shareable
+    #     r = list(np.random.choice(list(rv_graph.keys())))[0]
         
-        # get all of the other requests
-        to_plot = set()
-        for pair in rv_graph['rr']:
-            if r in pair:
-                to_plot |= pair 
+    #     # get all of the other requests
+    #     to_plot = set()
+    #     for pair in rv_graph['rr']:
+    #         if r in pair:
+    #             to_plot |= pair 
                 
-        print(r,to_plot)
-        print(requests[requests.index.isin(to_plot)])
-        plot_requests(t,requests[requests.index.isin(to_plot)],MaxWait,r)
+    #     print(r,to_plot)
+    #     print(requests[requests.index.isin(to_plot)])
+    #     plot_requests(t,requests[requests.index.isin(to_plot)],MaxWait,r)
     
     # Now we need to check which taxis can service which
     # requests
@@ -475,7 +474,7 @@ for d in D:
             # and pickup passengers if they've been picked up
                         
             #### THIS IS WHEN WE PICKUP AND DROP OFF PASSENGERS ####
-            print(f"Updating current state")
+            print("Updating current state")
             start_update_state = time.process_time()
             active_requests = update_current_state(t,
                                                    active_requests,
@@ -493,7 +492,7 @@ for d in D:
             start = time.process_time()
             rv_graph,active_requests = create_rv_graph(
                 t,active_requests.copy(),
-                times,visualize=False
+                times
                 )
             end = time.process_time()
             
@@ -530,6 +529,7 @@ for d in D:
 
             
             # Get the Trip assignments
+            
             Trips = allocate_trips_v2(V, R, T, VT, RT, TV,
                                       suppress_output=True)
             
@@ -550,12 +550,12 @@ for d in D:
                         
             ##### STILL NEED TO DO REBALANCING #####
             
-            if t > 60:
-                break
+            # if t > 60:
+            #     break
         
         # dump the logs
         event_logger.dump_logs(d,h)
         
-        break    
+        # break    
     
-    break
+    # break
