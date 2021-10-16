@@ -40,23 +40,20 @@ def create_ILP_data_v2(rtv_graph):
         RT[r]=trips
         
     TV = {}
-    TR = {}
     # Our sharability graph of possible assignments of trips t to either 
     # vehicles v or requests r
     for t in T:
         vehicles = []
-        requests= []
         for n in rtv_graph.neighbors(t):
             if type(n) == str:
                 vehicles.append(n)
-            else:
-                requests.append(n)
+
         TV[t]=vehicles
-        TR[t]=requests
+
     
         
     
-    return V, R, T, VT, RT, TV, TR
+    return V, R, T, VT, RT, TV
 
 
 def greedy_assignment(rtv_graph, k):
@@ -108,7 +105,7 @@ def greedy_assignment(rtv_graph, k):
     return rtv_graph
 
 
-def allocate_trips_v2(V, R, T, VT, RT, TV, TR):    
+def allocate_trips_v2(V, R, T, VT, RT, TV):    
 
     max_psg = 2 # maximum Requests per taxi
     unallocated_cost = 99999 # arbitrary cost of not allocating a passenger
@@ -118,23 +115,14 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, TR):
     # X is 1 if vehicle v is assigned to trip t, 0 otherwise
     X = {(v,t): m.addVar(vtype=GRB.BINARY) for v in V 
                                  for t in VT[v].keys()}
-     # Y is 1 if request r is served by trip t, 0 otherwise   
-    Y = {(r,t): m.addVar(vtype=GRB.BINARY) for r in R 
-                                 for t in RT[r]}
     # Z is 1 if request r is unallocated, 0 otherwise
     Z = {(r): m.addVar(vtype=GRB.BINARY) for r in R}
-    
-    # greedy allocation of starting position for the X variables
-    
     
     # the objective function minimizes the wait and delay time of each 
     # vehicle-trip assignment plus the high cost of not servicing a request
     m.setObjective(quicksum(X[v,t]*VT[v][t][0] for v in V for t in VT[v].keys())
                            + quicksum(Z[r] * unallocated_cost for r in R)
                            , GRB.MINIMIZE)
-    
-    
-    
     
     for v in V:
         # each vehicle must take up to only one "real" trip
@@ -147,14 +135,11 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, TR):
     for t in T:
         # each trip can't have more than one vehicle allocated
         m.addConstr(quicksum(X[v,t] for v in TV[t]) <= 1)
-        # each trip can only service a request if a vehicle has been assigned
-        m.addConstr(quicksum(Y[r,t] for r in TR[t]) <= 
-            quicksum(X[v,t] for v in TV[t])*max_psg)   
-            
+    
     for r in R:
         # each request must either be serviced by a trip or be unallocated
-        m.addConstr(quicksum(Y[r,t] for t in RT[r]) + Z[r] == 1)
-
+        m.addConstr(quicksum(X[v,t] for t in RT[r] for v in TV[t])
+                                    + Z[r] == 1)
     
     m.optimize()
 
@@ -172,8 +157,9 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, TR):
             Request_Trips.append((r, 'unallocated'))
         else:
             for t in RT[r]:
-                if Y[r,t].x > 0:
-                    Request_Trips.append((r, t))
+                for v in TV[t]:
+                    if X[v,t].x > 0:
+                        Request_Trips.append((r, t))
     
     return Vehicle_Trips, Request_Trips
 

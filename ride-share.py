@@ -411,14 +411,14 @@ for d in D:
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
             start_rtv = time.process_time()
-            V, R, T, VT, RT, TV, TR = create_ILP_data_v2(rtv_graph)
+            V, R, T, VT, RT, TV = create_ILP_data_v2(rtv_graph)
             end_rtv = time.process_time()
             print("create data performance:")
             print(f"  - number of edges: {len(list(rtv_graph.edges))}")
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
             Vehicle_Trips, Requests_Trips = allocate_trips_v2(
-                                        V, R, T, VT, RT, TV, TR)
+                                        V, R, T, VT, RT, TV)
             
             break
         
