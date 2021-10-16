@@ -6,6 +6,7 @@ Created on Tue Sep 21 16:03:29 2021
 """
 
 import pandas as pd
+from colorama import Fore,Style
 delta = 30
 
 class PickupError(Exception):
@@ -408,12 +409,13 @@ class Passenger():
         
         # check pickup
         try:
-            assert time - self.req_time <= self.max_wait            
+            assert time - self.req_time <= self.max_wait  
+        except AssertionError:
             self.wait_time = time - self.req_time
-        except AssertionError as ae:
-            print(f"\nLate pickup {self}: +{self.wait_time}s\n")
+            print(f"\n{Fore.RED}Late pickup {self}: +{self.wait_time}s{Style.RESET_ALL}\n")
         
-        # assign pickup and wait times        
+        # assign pickup and wait times  
+        self.wait_time = time - self.req_time
         self.pickup_time = time
         
         
@@ -436,12 +438,13 @@ class Passenger():
         try:
             # check this against the base journey time
             assert self.travel_time - self.base_jt <= self.max_delay
+        except AssertionError:
             self.delay_time = self.travel_time - self.base_jt
-        except AssertionError as ae:
-            print(f"\nLate dropoff {self}: +{self.delay_time}s\n")
+            print(f"\n{Fore.RED}Late dropoff {self}: +{self.delay_time}s{Style.RESET_ALL}\n")
             
 
-        # finally set the drop off time        
+        # finally set the drop off time     
+        self.delay_time = self.travel_time - self.base_jt
         self.drop_off_time = time
 
 

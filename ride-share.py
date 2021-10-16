@@ -528,8 +528,7 @@ for d in D:
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
             
-            # Get the Trip assignments
-            
+            # Get the Trip assignments            
             Trips = allocate_trips_v2(V, R, T, VT, RT, TV,
                                       suppress_output=True)
             
@@ -550,8 +549,8 @@ for d in D:
                         
             ##### STILL NEED TO DO REBALANCING #####
             
-            # if t > 60:
-            #     break
+            if t == 600:
+                break
         
         # dump the logs
         event_logger.dump_logs(d,h)
