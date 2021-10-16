@@ -134,10 +134,7 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, TR, suppress_output=False):
     # vehicle-trip assignment plus the high cost of not servicing a request
     m.setObjective(quicksum(X[v,t]*VT[v][t][0] for v in V for t in VT[v].keys())
                            + quicksum(Z[r] * unallocated_cost for r in R)
-                           , GRB.MINIMIZE)
-    
-    
-    
+                           , GRB.MINIMIZE)    
     
     for v in V:
         # each vehicle must take up to only one "real" trip
@@ -159,29 +156,37 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, TR, suppress_output=False):
         m.addConstr(quicksum(Y[r,t] for t in RT[r]) + Z[r] == 1)
 
     m.optimize()
-
-    # get all of the assigned vehicle-trips combinations    
-    Vehicle_Trips = []
+    
+    Trips = dict()
     for v in V:
-        for t in VT[v].keys():
-            if X[v,t].x > 0:
-                
-                # if len(t) > 1:
-                #     print((v,t))
-                
-                Vehicle_Trips.append((v, t))
+        for t in VT[v]:
+            if X[v,t].x > 0.9:
+                Trips[t] = v
     
-    # get all of the assigned request-trip combinations
-    Request_Trips = []
-    for r in R:
-        if Z[r].x > 0:
-            Request_Trips.append((r, 'unallocated'))
-        else:
-            for t in RT[r]:
-                if Y[r,t].x > 0:
-                    Request_Trips.append((r, t))
+    return Trips
+
+    # # get all of the assigned vehicle-trips combinations    
+    # Vehicle_Trips = []
+    # for v in V:
+    #     for t in VT[v].keys():
+    #         if X[v,t].x > 0:
+                
+    #             # if len(t) > 1:
+    #             #     print((v,t))
+                
+    #             Vehicle_Trips.append((v, t))
     
-    return Vehicle_Trips, Request_Trips
+    # # get all of the assigned request-trip combinations
+    # Request_Trips = []
+    # for r in R:
+    #     if Z[r].x > 0:
+    #         Request_Trips.append((r, 'unallocated'))
+    #     else:
+    #         for t in RT[r]:
+    #             if Y[r,t].x > 0:
+    #                 Request_Trips.append((r, t))
+    
+    # return Vehicle_Trips, Request_Trips
 
 
 '''
@@ -268,24 +273,16 @@ def allocate_trips(Vehicles, Requests, Trips, TripCosts, RequestTrips):
     
     m.optimize()
     
-    Trips = dict()
-    for t in T:
-        for v in V:
-            if X[v,t].x > 0.9:
-                Trips[t] = v
+    Vehicle_Trips = []
+    for v in V:
+        for t in T:
+            if X[v,t].x > 0:
+                Vehicle_Trips.append((Vehicles[v], Trips[t]))
     
-    return Trips
+    Request_Trips = []
+    for r in R:
+        for t in T:
+            if Y[r,t].x > 0:
+                Request_Trips.append((Requests[r], Trips[t]))
     
-    # Vehicle_Trips = []
-    # for v in V:
-    #     for t in T:
-    #         if X[v,t].x > 0:
-    #             Vehicle_Trips.append((Vehicles[v], Trips[t]))
-    
-    # Request_Trips = []
-    # for r in R:
-    #     for t in T:
-    #         if Y[r,t].x > 0:
-    #             Request_Trips.append((Requests[r], Trips[t]))
-    
-    # return Vehicle_Trips, Request_Trips 
+    return Vehicle_Trips, Request_Trips 

@@ -43,7 +43,8 @@ class ShortestPathFinder:
     def __init__(self,network,times):
         
         self.G = network
-        self.times = times 
+        self.times = times
+        self.memory_ = dict()
         
     def shortest_between_points(self,source,target):
         """
@@ -58,26 +59,31 @@ class ShortestPathFinder:
         -------
         shortest path as a list of nodes
         """
-        _,path = nx.single_source_dijkstra(
-            self.G,source,target=target,weight='jt')
+        
+        # cache the paths, so we don't have to re-calculate
+        if (source,target) not in self.memory_:
+            _,path = nx.single_source_dijkstra(
+                self.G,source,target=target,weight='jt')
+            self.memory_[(source,target)] = path
+        else:
+            path = self.memory_[(source,target)]
+            
         return path
     
     
-    def assign_events(self,time,node,requests,passengers):
+    def assign_events(self,time,node,requests):
         """
         check if a request has an event at this node, and 
         if so, create an event for the timetable
+        ensure no duplicate requests
         """
         
         # check for any pickups or dropoffs in the first node
         picks = requests[requests['from_node']==node].index.to_list()
         drops = requests[requests['to_node']==node].index.to_list()
-        
-        # add the current passengers to the TT
-        drops += [p.req_id for p in passengers if p.drop_off_node == node]
-        
+                
         # init the timetable and add any initial pickups or dropoffs
-        events = [[time,node,np.nan,np.nan],]
+        events = [[time,node,np.nan,np.nan],] # first event is the next loc
         for pick in picks:
             events.append([time,node,pick,np.nan])
             
@@ -87,31 +93,37 @@ class ShortestPathFinder:
         return events
     
     
-    def get_timetable(self,path,time,requests,passengers):
+    def get_timetable(self,first_node,path,time,requests):
         """
         Parameters
         ----------
-        path : list of nodes
+        path : list of requests and nodes
+        requests : are
         
-        !!! assumption is that current passenger dropoff locations
-        are in the path !!!
-
         Returns
         -------
-        an array of nodes and cumulative journey times, we 
+        a dataframe with columns ['time','loc','pickup','dropoff']
         
         There's probably a more efficient way to do this, but
         my brain is shutting down
         """
         
         # check for any pickups or dropoffs in the first node
-        timetable = self.assign_events(time,path[0],requests)
-            
-        # for the remaining nodes in the journey, repeat
+        # print(first_node)
+        timetable = self.assign_events(time,first_node,requests)
+        # print("\nGet timetable")
+        # print(timetable)
+                    
+        # this is the allocated path from the rtv-graph - just need to 
+        # insert the first node (cab's expected location)
+        path = [first_node]+[step[1] for step in path]
         for source,target in zip(path[:-1],path[1:]):
             
             # get the detailed steps in the path
-            route = shortest_between_points(source,target)
+            route = self.shortest_between_points(source,target)
+            # print()
+            # print(source,target)
+            # print(route)
 
             for from_,to_ in zip(route[:-1],route[1:]):
                 # get the step time
@@ -119,9 +131,11 @@ class ShortestPathFinder:
                 
                 # add the step to the timetable
                 time += jt
-                timetable += assign_events(time,to_,requests)
+                timetable += self.assign_events(time,to_,requests)
                   
-        return np.array(timetable).astype(int)
+        return pd.DataFrame(
+            timetable,columns=['time','loc','pickup','dropoff']
+            )
     
 
 class JourneyTimes():

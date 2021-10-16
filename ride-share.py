@@ -15,9 +15,11 @@ from gurobipy import *
 # our modules
 from source_data import JourneyTimes, Requests
 from taxis import Taxi, Passenger
-from utils import (assign_basejt, plot_requests, shortest_path, is_cost_error,
-                   check_two_req, add_one_req, check_one_req_one_passenger,
-                   process_assignments,update_current_state,Logger)                   
+from utils import (
+    Logger,assign_basejt,plot_requests,shortest_path,is_cost_error,
+    check_two_req, add_one_req, check_one_req_one_passenger,
+    process_assignments,update_current_state,shortest_withpassenger
+    )                   
 from allocate import create_ILP_data_v2, allocate_trips_v2, greedy_assignment
 
 # cost error
@@ -41,6 +43,21 @@ nDays = int(Period/(24*3600))
 nIntersections = 4091
 inters = np.arange(nIntersections)
 day_trans = {0:0,1:1,2:1,3:1,4:1,5:1,6:2}
+
+### Dates and days for printing
+DAY_NAMES = {i: daynm for i,daynm in enumerate(
+    ["Sunday",
+     "Monday",
+     "Tuesday",
+     "Wednesday",
+     "Thursday",
+     "Friday",
+     "Saturday"])
+    }
+MY = "/5/2013"
+DATES = {i: str(i+5)+MY for i in range(len(DAY_NAMES))}
+# print(DAY_NAMES)
+# print(DATES)
 
 ### Sets
 # W = range(nWindows)
@@ -85,9 +102,9 @@ jt = JourneyTimes() #r'datasets/journey_times')
 # Michael used something called Hqueue or something to do this
 # it should be in one of the python files on Blackboard
 # I suggest we inject them at randomly sampled drop off points
-event_logger = Logger()
+event_logger = Logger(r'output_logs')
 CabIds = { f"v{v}" for v in V }
-Taxis = { f"v{v}": Taxi(f"v{v}",k,init_locs[v],event_logger) for v in V }
+Taxis = { f"v{v}": Taxi(f"v{v}",k,init_locs[v],event_logger,MaxWait,MaxWait) for v in V }
     
 def build_shareable(t,requests,times,rv_graph,visualise=False):        
     """
@@ -195,72 +212,103 @@ def create_rv_graph(t,requests,times,visualize=False):
     # Now we need to check which taxis can service which
     # requests
     for v in Taxis:
-        
-        # check if the cab will be available at a point in time
-        # if Taxis[v].is_available():
-            
-        """
-        RW:
-        The paper checks if the existing passengers (in the cab) can be
-        satisfied too
-        - We need to know the intermediate nodes to keep track of the cabs,
-          so computing sharability between a passenger
-          and a request uses the next node enroute as the from_node
-          and the time to that node as a ""
-        """
-                    
-        # get the requests that are serviceable
+                
+        # get the cab
         cab = Taxis[v]
-        potentials = cab.check_availability(t,requests,times)
         
-        # using Taxi.find_me(), should return the current locaction
-        # for available cabs or next node in a trip and the journey
-        # time to either, 0 if idle
-        jt_to_nextnode,location = cab.find_me(t)
-        jt_from_me = times[location,:]
+        # check where the cab will be next and the time to get there
+        arrive_time,next_loc = cab.find_me(t)                
+        time_to_next_loc = arrive_time - t
         
-        # this cab can get to these requests within their max wait time
-        # and if the cab will be available within their max wait time
-        potentials = cab.check_availability(t,requests)
-        # potentials = requests[
-        #     jt_to_nextnode+
-        #     requests['qos']+
-        #     jt_from_me[requests['from_node']]<=MaxWait
-        #     ]
+        # potential requests based on the time from the next location
+        # to each request
+        jt_from_me = times[next_loc,:]
+        potentials = requests[
+            requests['qos']+time_to_next_loc + 
+            jt_from_me[requests['from_node']]<=MaxWait
+            ]
         
-        # if this cab can't service any requests, then skip to the next
-        # cab - else update the rv_graph
         if potentials.empty:
             continue
-        else:                                    
+        
+        # check how many passengers will be in the cab at it's
+        # next location
+        passengers = cab.get_passengers(t)
+        
+        # if there are no passengers in the cab just creat the 
+        # rv edges
+        if len(passengers) == 0:
+                              
             # assign edges between cab and requests with the journey
             # time as the value - don't assign the initial qos twice - 
             # it is assigned in the shortest path function
             
             # is the cab is available, just assign edges
-            if cab.is_idle():
-                for i,delay in enumerate(jt_from_me[potentials['from_node']]):
-                    rv_graph.add_edge(potentials.index[i],v,cost=delay)
+            for i,delay in enumerate(jt_from_me[potentials['from_node']]):
+                rv_graph.add_edge(
+                    potentials.index[i],
+                    v,cost=delay+time_to_next_loc
+                    )
+                
+        # if there are passengers on board, check where the cab will be
+        # and check with every passenger if picking up the available
+        # request will breach their constraints
+        else:
+            # for each passenger that will still be in the cab at the 
+            # next location, check if they can afford to reroute to 
+            # this request or be dropped off on the way
+                        
+            # if the cab is full at this point we can only service
+            # request after the next drop off
+            #   - (not checking combinations, just assume next is first)
+            if len(passengers) == k:
+                
+                # get the next drop off
+                drop_time,drop_loc,drop_id = cab.get_next_dropoff()
+                
+                # which requests can we service after dropping off 
+                time_to_drop = drop_time - t
+                jt_from_drop = times[drop_loc,:]
+                
+                print("\nAny requests after drop??")
+                potentials = potentials[
+                    potentials['qos'] + time_to_drop + 
+                    jt_from_drop[potentials['from_node']]<=MaxWait
+                    ]
+                
+                print(survivors.shape)
+                                
+                # if none left, move on
+                if survivors.empty:
+                    continue
             
-            # if not, we need to check the with every passenger if 
-            # picking up the available request will breach their
-            # max delay
-            # else:
-                #### MOVE THIS TO THE CAB CLASS ####
-            #     for passenger in cab.passengers:                            
-            #         # calc the journey time from the current
-            #         # location to pickup the each request and then
-            #         jt_to_request = jt_from_me[potentials['from_node']]
+                # otherwise, remove this passengner from the list to check
+                # the others
+                passengers = [p for p in passengers if p.req_id != drop_id]
+                
+                # update next location to this dropoff point
+                arrive_time = drop_time
+                next_loc = drop_loc
+            
+            # here we need to check if the remaining passenger and each
+            # request can be combined
+            for p in passengers:               
+                
+                # the options are:
+                # - drop the passenger first, or
+                # - pickup the request
+                for r,req_t,o,d,ltp,bjt,qos,_ in potentials.to_records():
+                
+                    # we need to know, what the passenger's current 
+                    # delay status is
                     
-            #         # get the destination of the passenger to see if at
-            #         # least, the passenger can be dropped first, if not, 
-            #         # then don't check
-                    
-            #         # get the shortest path to satisfy a pair of requests
-            #         pair = dict([(r1,dict(route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
-            #                      (r2,dict(route=(o2,d2),other=r1,wait=qos2,base=bjt2))])
-                    
-            # for r,t,o,d,ltp,bjt,qos,_ in potentials.to_records():                        
+                    # from the request's perspective, just need to 
+                    # know how long until the cab gets to me
+                    cost,path = shortest_withpassenger(
+                        p,arrive_time,next_loc,
+                        dict(req_id=r,route=(o,d),req_t=req_t,base=bjt),
+                        times,MaxWait
+                        )            
                     
     return rv_graph,requests
 
@@ -304,7 +352,7 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
             # trip and the number of requests in the trip
             vehicle = clique[-1]
             # print(vehicle)
-            passengers = len(Taxis[vehicle].passengers)
+            num_passengers = len(Taxis[vehicle].get_passengers(t))
             
             # RW: if we're going to use 'trip' as a node id, I think it
             #     needs to sorted to avoid symetry issues - or use a frozenset
@@ -314,15 +362,15 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
             # Start with the "one request + empty vehicle" trips
             # which will always be feasible because we checked in the rv
             # graph creation.
-            if reqs == 1 and passengers == 0:
+            if reqs == 1 and num_passengers == 0:
                 
-                rtv_graph = add_one_req(t,rtv_graph, rv_graph, trip, 
-                                        vehicle, active_requests,times)
+                rtv_graph = add_one_req(t,rtv_graph,rv_graph,trip, 
+                                        vehicle,active_requests)
                                        
             # then deal with the "one request + non-empty vehicle" trips.
             # This trip will have a delay > 0 due to deviations
             # for both passengers
-            elif reqs == 1 and passengers == 1:
+            elif reqs == 1 and num_passengers == 1:
                 
                 rtv_graph = check_one_req_one_passenger(t,Taxis,rv_graph
                             ,rtv_graph,times,active_requests,vehicle,
@@ -334,11 +382,11 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
                 # if the vehicle is empty we add all the individual
                 # requests in the clique as seperate, one request trips 
                 # and check all the pairwise shared request trips
-                if passengers == 0:
+                if num_passengers == 0:
                     for r in trip:
                         sub_trip = tuple([r])
                         rtv_graph = add_one_req(t,rtv_graph,rv_graph, 
-                                    sub_trip,Taxis[vehicle],active_requests,times)
+                                    sub_trip,vehicle,active_requests)
                     
                     # RW: not sure if it's guaranteed, but I think combinations
                     # preserves order, so you might not need to sort again
@@ -355,7 +403,7 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
                 # if the vehicle has one passenger we check all the
                 # individual requests to see if they can fit with
                 # the current passenger
-                elif passengers == 1:
+                elif num_passengers == 1:
                     for r in trip:
                         sub_trip = tuple([r])
                         rtv_graph = check_one_req_one_passenger(t,Taxis,
@@ -416,6 +464,7 @@ for d in D:
             # this is the current time
             t = w*delta + delta          
             
+            print(f"\nStarting time window t={t}s\n")
             # step 0: based on current time, process in-flight trips to remove
             # passengers from cabs if they've finished their journey
             
@@ -423,15 +472,19 @@ for d in D:
             # this is where 
             
             #### THIS IS WHEN WE PICKUP AND DROP OFF PASSENGERS ####
+            print(f"Updating current state")
+            start_update_state = time.process_time()
             active_requests = update_current_state(t,
                                                    active_requests,
                                                    Taxis)            
             active_requests = active_requests.append(
                 new_requests.drop(['window','day','hour'],axis=1)
-                )  
+                )
+            end_update_state = time.process_time()
+            print(f"  - compute time = {end_update_state-start_update_state:0.1f}s\n")
                         
             # step 1: create the rv graph
-            print(f"RV performance t={t}s, {active_requests.shape[0]} requests:")
+            print(f"RV performance {active_requests.shape[0]} requests:")
             start = time.process_time()
             rv_graph,active_requests = create_rv_graph(
                 t,active_requests.copy(),
@@ -464,27 +517,40 @@ for d in D:
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
             start_rtv = time.process_time()
-            V, R, T, VT, RT, TV, TR = create_ILP_data_v2(rtv_graph,
-                                                         suppress_output=True)
+            V, R, T, VT, RT, TV, TR = create_ILP_data_v2(rtv_graph)
             end_rtv = time.process_time()
-            print("create data performance:")
+            print("Create data performance:")
             print(f"  - number of edges: {len(list(rtv_graph.edges))}")
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
             
             # Get the Trip assignments
-            Trips = allocate_trips_v2(V, R, T, VT, RT, TV, TR)
+            Trips = allocate_trips_v2(V, R, T, VT, RT, TV, TR,
+                                      suppress_output=True)
             
             # This function simply adds trips to Cabs as a "timetable"
             # we only create passengers and add them to cabs in subsequent
             # iterations
+            start_process_assign = time.process_time()
             ignored,idle = process_assignments(
-                t,Trips,Taxis,active_requests,rtv_graph
+                t,Trips,Taxis,active_requests,path_finder,rtv_graph,CabIds
                 )
+            end_process_assign = time.process_time()
             
+            print("Processing ILP assignments:")
+            print(f"  - compute time {end_process_assign-start_process_assign:0.1f}s")
+            print(f"  - {ignored.shape[0]}/{active_requests.shape[0]} ignored requests")
+            print(f"  - {len(idle)}/{M} idle cabs")
+            
+            
+                        
             ##### STILL NEED TO DO REBALANCING #####
             
-            break
+            if t > 60:
+                break
         
-        break
+        # dump the logs
+        event_logger.dump_logs(d,h)
+        
+        break    
     
     break
