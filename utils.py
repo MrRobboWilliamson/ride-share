@@ -9,6 +9,9 @@ from IPython.display import clear_output, display
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import pandas as pd
+from taxis import Passenger
+import os
+from pathlib import Path
 
 class ConsoleBar:
     def __init__(self,num_ticks,length=100):
@@ -41,6 +44,39 @@ class ConsoleBar:
         bar_str = '   {:>3.0f}%[{: <' + str(self.length+1) + '}]'
         clear_output(wait=True)
         print(bar_str.format(progress, '.'*bar_ticks+'>'), end=print_end)
+        
+
+class Logger:
+    '''
+    to pass to passengers and taxis to record events
+    '''
+    def __init__(self,dump_path):
+        self.all_records = list()
+        self.dump_path = dump_path
+        
+        # ensure the dump path exists
+        Path(dump_path).mkdir(exist_ok=True)
+        
+    def make_log(self,time,passenger,cab,action,location=None):
+        """
+        Use this to record:
+            - when a trip is allocated or updated
+            - when a passenger is picked up or dropped off        
+        """
+        self.all_records.append(
+            dict(time_stamp=time,
+                 passenger_id=passenger,
+                 cab_id=cab,
+                 event=action,
+                 location=location)
+            )
+        
+    def dump_logs(self,day,hour):
+        pd.DataFrame(self.all_records).to_csv(
+            os.path.join(self.dump_path,f"{day}_{hour}.csv"),index=False
+            )
+        self.all_records = []
+            
         
 def is_cost_error(cost,path,pair,times,show=False):
     """
@@ -258,20 +294,158 @@ def shortest_path(pair,times,MaxWait):
     return best_path
 
 
+def shortest_withpassenger(passenger,start_time,start_loc,
+                           request_details,
+                           times,MaxWait):
+    """
+    Check with the passenger current state if it can service
+    a request.       
+    """    
+
+    # get the passenger current state
+    pdelay = passenger.delay_time
+    pdrop_loc = passenger.drop_off_node
+    
+    # shortest time to drop the passenger
+    time_to_drop = times[start_loc,pdrop_loc]    
+        
+    # get the request details
+    req_id = request_details['req_id']
+    o,d = request_details['route']
+    req_t = request_details['req_t']
+    bjt = request_details['base']
+    
+    # generate options
+    options = [
+        [(passenger.req_id,pdrop_loc),(req_id,o),(req_id,d)],
+        [(req_id,o),(passenger.req_id,pdrop_loc),(req_id,d)],
+        [(req_id,o),(req_id,d),(passenger.req_id,pdrop_loc)]
+        ]
+    
+    best_path = float('inf'),False    
+    for combo in options:
+    
+        # go through the events and check the constraints
+        current_loc = start_loc
+        current_time = start_time
+        journey_time = 0
+        for event in combo:
+            
+            # time to here and update location
+            time_to_here = times[current_loc,event[1]]
+            current_time += time_to_here
+            current_loc = event[1]
+            
+            # check the constraints
+            if current_time - req_t > MaxWait:
+                best_path = float('inf'),False
+                break
+            
+            # check if this is the passenger dropoff
+            if event[0] == passenger.req_id:
+                # calculate the addition journey time
+                journey_time = current_time-start_time
+                tot_delay = pdelay + journey_time - time_to_drop
+                
+                # does this breach the passenger's delay constraint?
+                if tot_delay > MaxWait:
+                    best_path = float('inf'),False
+                    break
+                else:
+                    pass            
+            
+            
+    # first option, pickup the request first
+    time_to_get_request_first = times[next_loc,o]
+    wait_time = (next_time + time_to_get_request_first) - req_time
+    
+    
+    
+    for first_pickup in pickups:
+                                    
+        # get this request pickup node
+        first_node = pair[first_pickup]['route'][0]
+            
+        # get the second node in the journey
+        second_pickup = pair[first_pickup]['other']
+        second_node = pair[second_pickup]['route'][0]
+            
+        # add the initial wait time and check against the MaxWait constraint
+        first_pickup_cost = pair[first_pickup]['wait']
+        second_pickup_cost = times[first_node,second_node] + pair[second_pickup]['wait']
+            
+        # assign a massive cost if we exceed the wait time
+        # on the other request
+        if first_pickup_cost > MaxWait or second_pickup_cost > MaxWait:
+            continue        
+                                                   
+        # now look at the dropoffs
+        for first_dropoff in dropoffs:
+            
+            # get the last dropoff and the nodes
+            second_dropoff = pair[first_dropoff]['other']            
+            third_node = pair[first_dropoff]['route'][1]
+            fourth_node = pair[second_dropoff]['route'][1]
+                        
+            # calculate the journey times
+            jt_0 = times[first_node,second_node]
+            jt_1 = times[second_node,third_node]
+            jt_2 = times[third_node,fourth_node]
+            
+            # if the first drop is the same request as the second pickup, there
+            # will be no journey time delay on the first drop
+            # its all on the second drop
+            if first_dropoff == second_pickup:                                
+                first_dropoff_cost = 0 
+                second_dropoff_cost = (jt_0+jt_1+jt_2) - pair[second_dropoff]['base']                         
+            
+            # otherwise it is split between the requests
+            else:
+                first_dropoff_cost = jt_0 + jt_1 - pair[first_dropoff]['base']
+                second_dropoff_cost = jt_1 + jt_2 - pair[second_dropoff]['base']
+            
+            # here we need to check the overall delay constraints
+            if first_dropoff_cost > MaxWait or second_dropoff_cost > MaxWait:
+                continue
+            
+            # calculate the total cost
+            total_cost = first_pickup_cost + second_pickup_cost + \
+                first_dropoff_cost + second_dropoff_cost
+                    
+            if total_cost < best_path[0]:
+                path = [(first_pickup,first_node),
+                        (second_pickup,second_node),
+                        (first_dropoff,third_node),
+                        (second_dropoff,fourth_node)]                
+                best_path = total_cost,path
+        
+    return best_path
+
+
 # add a feasible single request trip to the rtv graph
 # edge of the rv graph and no delay time for the trip. Add an
 # 'tv' edge with those two values and a 'rt' edge between the
 # request and the trip. NOTE: Trips are tuples so that multi
 # request trips can be accomodated.
-def add_one_req(rtv_graph, rv_graph, trip, vehicle, active_requests):
+def add_one_req(t,rtv_graph,rv_graph,trip,vehicle,active_requests):
     
+    # get the pickup and drop off times to satisfy the trip with
+    # this vehicle
+    request = trip[0]
+    details = active_requests.loc[request]
+    wait = rv_graph.get_edge_data(request,vehicle)['cost']
+        
+    # the path here will just be to go from my current
+    # location to pickup and drop off the request
+    path = [(request,details['from_node']),
+            (request,details['to_node'])]
+    
+    # add 'tv' edge
+    rtv_graph.add_edge(trip,vehicle,wait=details['qos']+wait,
+            delay=0,edge_type='tv',rnum=1,path=path)    
+        
     # add 'rt' edge
-    rtv_graph.add_edge(trip, vehicle, wait = 
-            active_requests.loc[trip[0]]['qos'] + \
-            rv_graph.get_edge_data(trip[0],vehicle)['cost'],
-            delay = 0, edge_type = 'tv', rnum = 1)
-    # add 'rt' edge
-    rtv_graph.add_edge(trip[0],trip, edge_type = 'rt')
+    rtv_graph.add_edge(trip[0],trip,edge_type='rt')
     
     return rtv_graph
 
@@ -279,7 +453,7 @@ def add_one_req(rtv_graph, rv_graph, trip, vehicle, active_requests):
 # check a one request trip with a vehicle that already has a passenger in it.
 # If the added delay to the passenger in the vehicles is within bounds add 
 # the trip to the rtv graph otherwise discard
-def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
+def check_one_req_one_passenger(t,Taxis,rv_graph,rtv_graph,times,active_requests,
                   vehicle,trip,MaxWait):#,MaxQLoss):
     
     """
@@ -293,17 +467,24 @@ def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
     """    
     
     # get the passenger's details
-    r1 = Taxis[vehicle].passengers[0].req_id
-    o1 = Taxis[vehicle].loc # passenger is in the taxi
-    d1 = Taxis[vehicle].passengers[0].drop_off_node
-    qos1 = Taxis[vehicle].passengers[0].wait_time
-    bjt1 = times[o1][d1] # whatever is left of the journey
+    p1 = Taxis[vehicle].passengers[0]
+    r1 = p1.req_id
+    
+    # get the taxi's next location
+    _,o1 = Taxis[vehicle].find_me(t)
+    # o1 = Taxis[vehicle].loc # passenger is in the taxi
+    d1 = p1.drop_off_node
+    qos1 = p1.wait_time
+    bjt1 = p1.base_jt
+    # bjt1 = times[o1][d1] # whatever is left of the journey
     
     # get the new pick up request details
     r2 = trip[0]
     t2,o2,d2,ltp2,bjt2,qos2,_ = active_requests.loc[r2]
     qos2 += rv_graph.get_edge_data(r2,vehicle)['cost']
     
+    # here we need to check if we drop off the passenger first
+    # or pickup the request first???
     # build the data pair for the shortest path algorithm
     pair = dict([(r1,dict(
                 route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
@@ -322,12 +503,20 @@ def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
     #     pass
     # else:
     if path:
+        
+        # RW: if we've found a valid path, do we need to update the rv_graph?
+        # create the order details for this vehicle-trip combo
+        # this data will be used to realise the pickups and drop offs
+        
+        ## how to recalculate the dropoff time for r1
+                
         tot_wait = qos2 + qos1
+        
         # add 'tv' edge
-        rtv_graph.add_edge(trip, vehicle, wait = tot_wait, delay = cost - 
-                           tot_wait, edge_type = 'tv', rnum = 1, path = path)
+        rtv_graph.add_edge(trip,vehicle,wait=tot_wait,delay=cost - 
+                           tot_wait,edge_type='tv',rnum=1,path=path)
         # add 'rt' edge
-        rtv_graph.add_edge(r2,trip, edge_type = 'rt')
+        rtv_graph.add_edge(r2,trip,edge_type='rt')
     
     return rtv_graph
 
@@ -337,7 +526,7 @@ def check_one_req_one_passenger(Taxis,rv_graph,rtv_graph,times,active_requests,
 # the wait time for the first pickup is within feasible 
 # limits, just need to check the additional wait time for 
 # the second pickup (time between first and second node)
-def check_two_req(rv_graph,rtv_graph,times,active_requests,
+def check_two_req(t,rv_graph,rtv_graph,times,active_requests,
                   vehicle,trip,MaxWait):
     
     """
@@ -379,7 +568,7 @@ def check_two_req(rv_graph,rtv_graph,times,active_requests,
         
         # r1_wait_v is the only value not in the request pair cost
         
-        # all costs are stored on the T,v edge        
+        # all costs are stored on the T,v edge   
         rtv_graph.add_edge(trip,vehicle,
                            wait=total_wait,
                            delay=delay,
@@ -392,3 +581,59 @@ def check_two_req(rv_graph,rtv_graph,times,active_requests,
         rtv_graph.add_edge(r2,trip, edge_type = 'rt')
     
     return rtv_graph
+
+
+def update_current_state(current_time,active_requests,Taxis):
+    """
+    process trip data of each taxi to req
+    
+    This process could be parallelized - ignore long processing times
+    """
+    
+    # loop over the cabs and 
+    picked_up = []
+    for cab in Taxis.values():
+        
+        # skip if the cab is idle
+        if cab.is_idle():
+            # print('idle')
+            continue        
+        else:
+            picked_up += cab.update_current_state(current_time)        
+    
+    # only return the requests that were NOT picked up
+    print(f"  - {len(picked_up)} passengers pickup up")
+    return active_requests[~active_requests.index.isin(picked_up)]
+
+def process_assignments(current_time,Trips,Taxis,active_requests,
+                        path_finder,rtv_graph,CabIds):
+    """
+    This function simply sets trips for cabs
+    
+    unfortunatly it's slow, but could be argued that this
+    should be parallized
+    """    
+    
+    allocated_requests = set()
+    allocated_taxis = set()
+    for trip_requests,cab_id in Trips.items():
+        
+        # to add a trip to a cab, we need a planned path      
+        path = rtv_graph.get_edge_data(trip_requests,cab_id)['path']
+        # print("Path",path)
+        Taxis[cab_id].set_trip(path,
+                               current_time,
+                               active_requests.loc[list(trip_requests)],
+                               path_finder)
+        
+        allocated_requests |= set(trip_requests)
+        allocated_taxis.add(cab_id)
+        
+    ignored = active_requests[
+        ~active_requests.index.isin(allocated_requests)
+        ]
+    idle = CabIds - allocated_taxis
+    
+    return ignored,idle
+    
+    

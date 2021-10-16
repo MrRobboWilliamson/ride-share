@@ -105,12 +105,17 @@ def greedy_assignment(rtv_graph, k):
     return rtv_graph
 
 
-def allocate_trips_v2(V, R, T, VT, RT, TV):    
+
+def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):    
+
 
     max_psg = 2 # maximum Requests per taxi
     unallocated_cost = 99999 # arbitrary cost of not allocating a passenger
     
     m = Model('Allocations')
+    
+    if suppress_output:
+        m.setParam('OutputFlag',0)
     
     # X is 1 if vehicle v is assigned to trip t, 0 otherwise
     X = {(v,t): m.addVar(vtype=GRB.BINARY) for v in V 
@@ -123,6 +128,7 @@ def allocate_trips_v2(V, R, T, VT, RT, TV):
     m.setObjective(quicksum(X[v,t]*VT[v][t][0] for v in V for t in VT[v].keys())
                            + quicksum(Z[r] * unallocated_cost for r in R)
                            , GRB.MINIMIZE)
+
     
     for v in V:
         # each vehicle must take up to only one "real" trip
@@ -141,27 +147,40 @@ def allocate_trips_v2(V, R, T, VT, RT, TV):
         m.addConstr(quicksum(X[v,t] for t in RT[r] for v in TV[t])
                                     + Z[r] == 1)
     
-    m.optimize()
 
-    # get all of the assigned vehicle-trips combinations    
-    Vehicle_Trips = []
+    m.optimize()
+    
+    Trips = dict()
     for v in V:
-        for t in VT[v].keys():
-            if X[v,t].x > 0:
-                Vehicle_Trips.append((v, t))
+        for t in VT[v]:
+            if X[v,t].x > 0.9:
+                Trips[t] = v
     
-    # get all of the assigned request-trip combinations
-    Request_Trips = []
-    for r in R:
-        if Z[r].x > 0:
-            Request_Trips.append((r, 'unallocated'))
-        else:
-            for t in RT[r]:
-                for v in TV[t]:
-                    if X[v,t].x > 0:
-                        Request_Trips.append((r, t))
+    return Trips
+
+    # # get all of the assigned vehicle-trips combinations    
+    # Vehicle_Trips = []
+    # for v in V:
+    #     for t in VT[v].keys():
+    #         if X[v,t].x > 0:
+                
+    #             # if len(t) > 1:
+    #             #     print((v,t))
+                
+    #             Vehicle_Trips.append((v, t))
     
-    return Vehicle_Trips, Request_Trips
+    # # get all of the assigned request-trip combinations
+    # Request_Trips = []
+    # for r in R:
+    #     if Z[r].x > 0:
+    #         Request_Trips.append((r, 'unallocated'))
+    #     else:
+    #         for t in RT[r]:
+    #             if Y[r,t].x > 0:
+    #                 Request_Trips.append((r, t))
+    
+    # return Vehicle_Trips, Request_Trips
+
 
 
 '''
