@@ -228,6 +228,8 @@ def create_rv_graph(t,requests,times,visualize=False):
             jt_from_me[requests['from_node']]<=MaxWait
             ]
         
+        # if there's not potential pickups, no point checking anying
+        # just skip this guy
         if potentials.empty:
             continue
         
@@ -235,7 +237,7 @@ def create_rv_graph(t,requests,times,visualize=False):
         # next location
         passengers = cab.get_passengers(t)
         
-        # if there are no passengers in the cab just creat the 
+        # if there are no passengers in the cab just create the 
         # rv edges
         if len(passengers) == 0:
                               
@@ -259,7 +261,7 @@ def create_rv_graph(t,requests,times,visualize=False):
             # this request or be dropped off on the way
                         
             # if the cab is full at this point we can only service
-            # request after the next drop off
+            # a request after the next drop off
             #   - (not checking combinations, just assume next is first)
             if len(passengers) == k:
                 
@@ -270,16 +272,14 @@ def create_rv_graph(t,requests,times,visualize=False):
                 time_to_drop = drop_time - t
                 jt_from_drop = times[drop_loc,:]
                 
-                print("\nAny requests after drop??")
                 potentials = potentials[
                     potentials['qos'] + time_to_drop + 
                     jt_from_drop[potentials['from_node']]<=MaxWait
                     ]
                 
-                print(survivors.shape)
-                                
-                # if none left, move on
-                if survivors.empty:
+                # if no potentials after the first drop, move on to the
+                # next cab
+                if potentials.empty:
                     continue
             
                 # otherwise, remove this passengner from the list to check
@@ -294,21 +294,25 @@ def create_rv_graph(t,requests,times,visualize=False):
             # request can be combined
             for p in passengers:               
                 
-                # the options are:
-                # - drop the passenger first, or
-                # - pickup the request
                 for r,req_t,o,d,ltp,bjt,qos,_ in potentials.to_records():
-                
-                    # we need to know, what the passenger's current 
-                    # delay status is
-                    
-                    # from the request's perspective, just need to 
-                    # know how long until the cab gets to me
+                                    
+                    # check combinations
                     cost,path = shortest_withpassenger(
                         p,arrive_time,next_loc,
-                        dict(req_id=r,route=(o,d),req_t=req_t,base=bjt),
+                        dict(req_id=r,route=(o,d),
+                             req_t=req_t,base=bjt),
                         times,MaxWait
-                        )            
+                        )
+                    
+                    # if there is a valid combination, add the edge with the 
+                    # cost.
+                    if path:
+                        
+                        # add the edge with the expected cost to the request
+                        # it might be useful to have the calculated path too?
+                        rv_graph.add_edge(r,v,cost=cost-qos, # remove the qos for consistency
+                            path=path
+                            )
                     
     return rv_graph,requests
 
@@ -469,14 +473,15 @@ for d in D:
             # passengers from cabs if they've finished their journey
             
             # and pickup passengers if they've been picked up
-            # this is where 
-            
+                        
             #### THIS IS WHEN WE PICKUP AND DROP OFF PASSENGERS ####
             print(f"Updating current state")
             start_update_state = time.process_time()
             active_requests = update_current_state(t,
                                                    active_requests,
-                                                   Taxis)            
+                                                   Taxis)
+            
+            # add on the new requests
             active_requests = active_requests.append(
                 new_requests.drop(['window','day','hour'],axis=1)
                 )
@@ -540,8 +545,7 @@ for d in D:
             print("Processing ILP assignments:")
             print(f"  - compute time {end_process_assign-start_process_assign:0.1f}s")
             print(f"  - {ignored.shape[0]}/{active_requests.shape[0]} ignored requests")
-            print(f"  - {len(idle)}/{M} idle cabs")
-            
+            print(f"  - {len(idle)}/{M} idle cabs")            
             
                         
             ##### STILL NEED TO DO REBALANCING #####

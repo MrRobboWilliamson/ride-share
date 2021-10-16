@@ -72,6 +72,8 @@ class Logger:
             )
         
     def dump_logs(self,day,hour):
+        
+        # put the data into a df and then dump it in a csv
         pd.DataFrame(self.all_records).to_csv(
             os.path.join(self.dump_path,f"{day}_{hour}.csv"),index=False
             )
@@ -295,19 +297,22 @@ def shortest_path(pair,times,MaxWait):
 
 
 def shortest_withpassenger(passenger,start_time,start_loc,
-                           request_details,
-                           times,MaxWait):
+                           request_details,times,MaxWait):
     """
     Check with the passenger current state if it can service
-    a request.       
+    a request.
+    
+    # with any of these combinations.
+    # start time and loc are when capacity becomes available
+    # to divert to the request.    
     """    
 
     # get the passenger current state
-    pdelay = passenger.delay_time
+    p_latest = passenger.latest_arrival
     pdrop_loc = passenger.drop_off_node
     
     # shortest time to drop the passenger
-    time_to_drop = times[start_loc,pdrop_loc]    
+    # time_to_drop = times[start_loc,pdrop_loc]    
         
     # get the request details
     req_id = request_details['req_id']
@@ -317,18 +322,22 @@ def shortest_withpassenger(passenger,start_time,start_loc,
     
     # generate options
     options = [
-        [(passenger.req_id,pdrop_loc),(req_id,o),(req_id,d)],
-        [(req_id,o),(passenger.req_id,pdrop_loc),(req_id,d)],
-        [(req_id,o),(req_id,d),(passenger.req_id,pdrop_loc)]
+        [(passenger.req_id,pdrop_loc),(req_id,o),(req_id,d)], # drop passenger first
+        [(req_id,o),(passenger.req_id,pdrop_loc),(req_id,d)], # pick req & drop pass
+        [(req_id,o),(req_id,d),(passenger.req_id,pdrop_loc)]  # pick & drop req first
         ]
     
     best_path = float('inf'),False    
     for combo in options:
     
         # go through the events and check the constraints
+        # try to minimise the overall cost, but
+        # only return the cost to the request (I think)
         current_loc = start_loc
         current_time = start_time
-        journey_time = 0
+        r_is_picked = False
+        cost = 0
+        wait_cost = 0
         for event in combo:
             
             # time to here and update location
@@ -336,91 +345,48 @@ def shortest_withpassenger(passenger,start_time,start_loc,
             current_time += time_to_here
             current_loc = event[1]
             
-            # check the constraints
-            if current_time - req_t > MaxWait:
-                best_path = float('inf'),False
-                break
-            
-            # check if this is the passenger dropoff
+            # check if this is a passenger drop off
             if event[0] == passenger.req_id:
-                # calculate the addition journey time
-                journey_time = current_time-start_time
-                tot_delay = pdelay + journey_time - time_to_drop
                 
-                # does this breach the passenger's delay constraint?
-                if tot_delay > MaxWait:
+                # check the passenger delay constraint
+                if current_time > passenger.latest_arrival:
                     best_path = float('inf'),False
                     break
-                else:
-                    pass            
+                
+                # add a cost
+                cost += current_time - passenger.earliest_arrival
+                
+            elif not r_is_picked and event[0] == req_id:
+                
+                # check the request wait constraint
+                if current_time - req_t > MaxWait:
+                    best_path = float('inf'),False
+                    break
+                
+                # set the request wait cost
+                cost += current_time - req_t
+                wait_cost = current_time - req_t
+                
+                # set pickup
+                r_is_picked = True            
             
-            
-    # first option, pickup the request first
-    time_to_get_request_first = times[next_loc,o]
-    wait_time = (next_time + time_to_get_request_first) - req_time
-    
-    
-    
-    for first_pickup in pickups:
-                                    
-        # get this request pickup node
-        first_node = pair[first_pickup]['route'][0]
-            
-        # get the second node in the journey
-        second_pickup = pair[first_pickup]['other']
-        second_node = pair[second_pickup]['route'][0]
-            
-        # add the initial wait time and check against the MaxWait constraint
-        first_pickup_cost = pair[first_pickup]['wait']
-        second_pickup_cost = times[first_node,second_node] + pair[second_pickup]['wait']
-            
-        # assign a massive cost if we exceed the wait time
-        # on the other request
-        if first_pickup_cost > MaxWait or second_pickup_cost > MaxWait:
-            continue        
-                                                   
-        # now look at the dropoffs
-        for first_dropoff in dropoffs:
-            
-            # get the last dropoff and the nodes
-            second_dropoff = pair[first_dropoff]['other']            
-            third_node = pair[first_dropoff]['route'][1]
-            fourth_node = pair[second_dropoff]['route'][1]
-                        
-            # calculate the journey times
-            jt_0 = times[first_node,second_node]
-            jt_1 = times[second_node,third_node]
-            jt_2 = times[third_node,fourth_node]
-            
-            # if the first drop is the same request as the second pickup, there
-            # will be no journey time delay on the first drop
-            # its all on the second drop
-            if first_dropoff == second_pickup:                                
-                first_dropoff_cost = 0 
-                second_dropoff_cost = (jt_0+jt_1+jt_2) - pair[second_dropoff]['base']                         
-            
-            # otherwise it is split between the requests
+            # finally this is the request dropoff
             else:
-                first_dropoff_cost = jt_0 + jt_1 - pair[first_dropoff]['base']
-                second_dropoff_cost = jt_1 + jt_2 - pair[second_dropoff]['base']
+                
+                # check the journey time constraint on the request
+                if current_time > req_t + bjt + MaxWait*2:
+                    best_path = float('inf'),False
+                    break
+                
+                # add the delay
+                cost += req_t + bjt - current_time
+                
+        # if the cost on this combo is better than the last, it's the best
+        if cost < best_path[0]:
+            best_path = cost,combo
             
-            # here we need to check the overall delay constraints
-            if first_dropoff_cost > MaxWait or second_dropoff_cost > MaxWait:
-                continue
-            
-            # calculate the total cost
-            total_cost = first_pickup_cost + second_pickup_cost + \
-                first_dropoff_cost + second_dropoff_cost
-                    
-            if total_cost < best_path[0]:
-                path = [(first_pickup,first_node),
-                        (second_pickup,second_node),
-                        (first_dropoff,third_node),
-                        (second_dropoff,fourth_node)]                
-                best_path = total_cost,path
-        
     return best_path
-
+    
 
 # add a feasible single request trip to the rtv graph
 # edge of the rv graph and no delay time for the trip. Add an

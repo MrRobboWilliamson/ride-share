@@ -85,7 +85,7 @@ class Taxi():
             # pop the trip details
             #  - which includes a ref to the passenger
             dets = self.trip_data.pop(r)
-            self.dropoff_passenger(dets['passenger'],time)
+            self.dropoff_passenger(dets['passenger'],loc,time)
         
         # return a list of the pickups to remove from active requests.
         return list(pickups['pickup'].values)
@@ -110,13 +110,17 @@ class Taxi():
 
     def get_next_dropoff(self):
         """
-        return the 
+        returns the next passenger to be dropped off 
         """
+        
+        # get the current scheduled dropoffs
         drops = self.current_timetable_[
-            ~self.current_timetable_['dropoff'].isnull()
+            self.current_timetable_['dropoff'].notnull()
             ]
         
-        return drops.iloc[0].loc['time','loc','dropoff']
+        # unpack and return the time location and req_id
+        time,loc,pickup,dropoff = drops.iloc[0]
+        return time,int(loc),dropoff
     
 
     def pickup_passenger(self,r,loc,time):
@@ -151,7 +155,7 @@ class Taxi():
         return passenger
                 
         
-    def dropoff_passengers(self,passenger,loc,time):
+    def dropoff_passenger(self,passenger,loc,time):
         
         """
         Drops off a passenger, records when the drop off was and how long the
@@ -245,7 +249,6 @@ class Passenger():
         self.req_id = req_id
         self.pickup_node = pickup_node
         self.drop_off_node = drop_off_node
-        # self.req_day = req_day
         self.req_time = req_time
         self.base_jt = base_jt
         self.status = 0
@@ -260,6 +263,7 @@ class Passenger():
         # we check against this time for passengers in cabs
         # if the cab can be diverted to pickup another passenger
         self.earliest_arrival = req_time + base_jt
+        self.latest_arrival = self.earliest_arrival + max_delay + max_wait
         
     def get_id(self):
         
