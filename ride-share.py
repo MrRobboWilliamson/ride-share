@@ -549,12 +549,12 @@ for d in D:
                         
             ##### STILL NEED TO DO REBALANCING #####
             
-            if t == 600:
-                break
+            # if t == 3630:
+            #     break
         
         # dump the logs
         event_logger.dump_logs(d,h)
         
-        # break    
+    #     break    
     
     # break
