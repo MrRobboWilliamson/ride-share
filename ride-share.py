@@ -4,7 +4,7 @@ This is the model
 """
 import numpy as np
 import pandas as pd
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 # from matplotlib.lines import Line2D
 import time
 import networkx as nx
@@ -112,7 +112,7 @@ def build_shareable(t,requests,times,rv_graph,visualise=False):
     
     TODO: future improvement - generate optional routes as weighted
     graphs and find shortest path using networkx feature. Instead of
-    my hacky function.    
+    my hacky function.
     """
     
     orequests = requests.copy()
@@ -327,6 +327,28 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
     
         ### check if constraints are satisfied to then generate ###
         ### feasible trips and assign request and vehicles to trips ###
+        
+        if len(clique) > 4:    
+            
+            # get the sub graph
+            subg = rv.subgraph(clique)
+            
+            # get the node positions
+            pos = nx.networkx.kamada_kawai_layout(subg)
+            
+            # draw the graph
+            fig,ax = plt.subplots(figsize=(10,6))
+            colors = ['tab:orange' if type(n) == str else 'tab:blue' for n in list(subg.nodes)]  
+            nx.draw(subg,node_size=3000,with_labels=True,node_color=colors,
+                    alpha=0.9,width=2,style=":",ax=ax,font_color='white')         
+                        
+            ax.set_xlim([1.2*x for x in ax.get_xlim()])
+            ax.set_ylim([1.2*y for y in ax.get_ylim()])
+            plt.tight_layout()
+            plt.axis('off')
+            plt.savefig(r"results/clique.jpg")
+            
+            print("\nClique is done!!\n")
         
         # If the clique contains only Int64s and no Strings then it
         # is a number of requests that no vehicle can service, so we
