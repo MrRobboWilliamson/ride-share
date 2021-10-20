@@ -587,10 +587,10 @@ for d in D:
             
             print("Rebalancing idle vehciles:")
             start_rebalance = time.process_time()
-            rebalance = rebalance(idle, unallocated, times, Taxis,
+            rebalanced = rebalance(idle, unallocated, times, Taxis,
                                   suppress_output=True)
             end_rebalance = time.process_time()
-            print(f"  - {len(rebalance)} redirected vehicles")
+            print(f"  - {len(rebalanced)} redirected vehicles")
             print(f"  - processing time {end_rebalance-start_rebalance:0.1f}s")            
             ##### STILL NEED TO DO REBALANCING #####
             
