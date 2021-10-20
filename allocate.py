@@ -184,7 +184,52 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):
     # return Vehicle_Trips, Request_Trips
 
 
+def rebalance(V, R, suppress_output=False):    
 
+    m = Model('Rebalnce')
+    
+    
+    
+    if suppress_output:
+        m.setParam('OutputFlag',0)
+    
+    # Y is 1 if vehicle v is assigned to request r, 0 otherwise
+    Y = {(v,r): m.addVar(vtype=GRB.BINARY) for v in V 
+                                 for r in R}
+    lenV = {(): m.addVar()}
+    lenR = {(): m.addVar()}
+    minVR = {(): m.addVar()}
+    
+    # the objective function minimizes the wait and delay time of each 
+    # vehicle-trip assignment plus the high cost of not servicing a request
+    m.setObjective(quicksum(Y[v,r]*jt[v,r] for v in V for r in R)
+                                                     , GRB.MINIMIZE)
+
+    
+    for v in V:
+        # each vehicle must be allocated only up to one request
+        m.addConstr(quicksum(Y[v,r] for r in R) <= 1)
+    
+    for r in R:
+        # each request must allocated only up to one vehicle
+        m.addConstr(quicksum(Y[v,r] for v in V) <= 1)
+     
+    m.addConstr(lenV == len(V))
+    m.addConstr(lenR == len(R))
+    m.addConstr(minVR == min_(lenV, lenR))
+    m.addConstr(quicksum(Y[v,r] for v in V for r in R) == minVR)
+    
+    m.optimize()
+    
+    Trips = dict()
+    for v in V:
+        for t in VT[v]:
+            if X[v,t].x > 0.9:
+                Trips[t] = v
+    
+    return Trips
+
+"""
 '''
 Original attempts at the allocation functions
 '''
@@ -282,3 +327,4 @@ def allocate_trips(Vehicles, Requests, Trips, TripCosts, RequestTrips):
                 Request_Trips.append((Requests[r], Trips[t]))
     
     return Vehicle_Trips, Request_Trips 
+"""
