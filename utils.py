@@ -326,7 +326,7 @@ def shortest_withpassenger(passenger,start_time,start_loc,
         [(req_id,o,True),(req_id,d,False),(passenger.req_id,pdrop_loc,False)]  # pick & drop req first
         ]
     
-    best_path = float('inf'),False    
+    best_path = 99999999,False    
     for combo in options:
     
         # go through the events and check the constraints
@@ -334,51 +334,53 @@ def shortest_withpassenger(passenger,start_time,start_loc,
         # only return the cost to the request (I think)
         current_loc = start_loc
         current_time = start_time
-        r_is_picked = False
         cost = 0
-        wait_cost = 0
+        wait_cost = 0        
+        r_pick_time = None
         for event in combo:
+            # unpack the event
+            r_id,loc,is_pickup = event
             
             # time to here and update location
-            time_to_here = times[current_loc,event[1]]
+            time_to_here = times[current_loc,loc]
             current_time += time_to_here
-            current_loc = event[1]
+            current_loc = loc
             
             # check if this is a passenger drop off
-            if event[0] == passenger.req_id:
+            if r_id == passenger.req_id:
                 
                 # check the passenger delay constraint
-                if current_time > passenger.latest_arrival:
-                    best_path = float('inf'),False
+                expected_jt = current_time - passenger.pickup_time
+                if expected_jt - passenger.base_jt > MaxWait:
+                    cost = float('inf')
                     break
                 
                 # add a cost
                 cost += current_time - passenger.earliest_arrival
                 
-            elif not r_is_picked and event[0] == req_id:
+            elif is_pickup and r_id == req_id:
                 
                 # check the request wait constraint
                 if current_time - req_t > MaxWait:
-                    best_path = float('inf'),False
+                    cost = float('inf')
                     break
                 
                 # set the request wait cost
                 cost += current_time - req_t
                 wait_cost = current_time - req_t
+                r_pick_time = current_time
                 
-                # set pickup
-                r_is_picked = True            
-            
             # finally this is the request dropoff
             else:
                 
                 # check the journey time constraint on the request
-                if current_time > req_t + bjt + MaxWait*2:
-                    best_path = float('inf'),False
+                expected_jt = current_time - r_pick_time
+                if expected_jt - bjt > MaxWait:
+                    cost = float('inf')
                     break
                 
                 # add the delay
-                cost += req_t + bjt - current_time
+                cost += expected_jt - bjt
                 
         # if the cost on this combo is better than the last, it's the best
         if cost < best_path[0]:
@@ -592,18 +594,18 @@ def update_current_state(current_time,active_requests,Taxis,MaxWait,customers):
     # combine the picked up and ignored passengers to remove them
     # from the active requests
     to_remove = set(picked_up) | set(ignored)
-    
-    # try to remove if there is key error, suss out why
-    try:    
-        return active_requests.drop(to_remove)
-    except KeyError as ke:
-        m = re.match(r"\[(\d+)\.\]",ke.args[0])
-        invalid = int(m.group(1))
+    return active_requests.drop(to_remove)
+    # # try to remove if there is key error, suss out why
+    # try:    
+    #     return active_requests.drop(to_remove)
+    # except KeyError as ke:
+    #     m = re.match(r"\[(\d+)\.\]",ke.args[0])
+    #     invalid = int(m.group(1))
         
-        # see if we can get the customer, this will 
-        # indicate its not and ignored error
-        customer = customers[invalid]['passenger']
-        print("\nWeird stuff",customer,customer.num_pickups)
+    #     # see if we can get the customer, this will 
+    #     # indicate its not and ignored error
+    #     customer = customers[invalid]['passenger']
+    #     print("\nWeird stuff",customer,customer.num_pickups)
         
 
 def book_trips(current_time,Trips,Taxis,active_requests,

@@ -434,7 +434,8 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
                         rtv_graph = check_one_req_one_passenger(t,Taxis,
                                 rv_graph,rtv_graph,times,
                                 active_requests,vehicle,sub_trip,
-                                MaxWait) #,MaxQLoss)
+                                MaxWait)
+                        
                 # otherwise we have a full vehicle and so none of
                 # these requests can be serviced by this vehicle
                 else:

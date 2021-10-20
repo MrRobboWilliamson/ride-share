@@ -83,24 +83,23 @@ class Taxi():
         pickups = to_realize[to_realize['pickup'].notnull()]
         dropoffs = to_realize[to_realize['dropoff'].notnull()]
         
-        # put erronous requests here to track them
-        errors = [2209,289]
-                  
-                  # ,2983,1246,293,716,2217,2371,
-                  # 1328,666,2742,1231,482]
-        if self.flag or any(self.current_timetable_['pickup'].isin(errors)) or\
-            any(pickups['pickup'].isin(errors)):
+        # # put erronous requests here to track them
+        # errors = [2209,289]                  
+        #           # ,2983,1246,293,716,2217,2371,
+        #           # 1328,666,2742,1231,482]
+        # if self.flag or any(self.current_timetable_['pickup'].isin(errors)) or\
+        #     any(pickups['pickup'].isin(errors)):
             
-            print()
-            print(self)
-            print(to_realize)
-            print(self.current_timetable_)
-            print(self.passengers)
-            # print(self.trip_data)
-            self.flag = True
-            print()
-            if any(dropoffs['dropoff'].isin(errors)):
-                self.flag = False
+        #     print()
+        #     print(self)
+        #     print(to_realize)
+        #     print(self.current_timetable_)
+        #     print(self.passengers)
+        #     # print(self.trip_data)
+        #     self.flag = True
+        #     print()
+        #     if any(dropoffs['dropoff'].isin(errors)):
+        #         self.flag = False
         
         # go through and action pickups
         for idx,time,loc,r,_ in pickups.to_records():
