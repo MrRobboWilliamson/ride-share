@@ -7,11 +7,11 @@ Created on Sat Sep 25 08:46:40 2021
 """
 from IPython.display import clear_output, display
 import matplotlib.pyplot as plt
-# from matplotlib.lines import Line2D
 import pandas as pd
-# from taxis import Passenger
 import os
+import re
 from pathlib import Path
+
 
 class ConsoleBar:
     def __init__(self,num_ticks,length=100):
@@ -556,38 +556,63 @@ def check_two_req(t,rv_graph,rtv_graph,times,active_requests,
     return rtv_graph
 
 
-def update_current_state(current_time,active_requests,Taxis):
+def update_current_state(current_time,active_requests,Taxis,MaxWait,customers):
     """
-    process trip data of each taxi to req
-    
-    This process could be parallelized - ignore long processing times
+    Purpose:
+        - update cab state: pickup and dropoff passengers
+        - remove picked up passengers from the active requests
+        - TODO: remove ignored requests from the active requests
+            - define ignored as timed out. Current time - req time > MaxWait
     """
     
     # loop over the cabs and 
     picked_up = []
+    dropped_off = []
     for cab in Taxis.values():
-        
-        # if len(cab.passengers) >= 2:
-        #     print(cab,len(cab.passengers))
-        
+                
         # skip if the cab is idle
         if cab.is_idle():
             # print('idle')
             continue        
         else:
-            picked_up += cab.update_current_state(current_time)        
+            picked,dropped = cab.update_current_state(current_time,
+                                                      customers)
+            picked_up += picked
+            dropped_off += dropped
     
-    # only return the requests that were NOT picked up
+    # get the requests that were never assign a trip
+    ignored = active_requests[
+        (current_time-active_requests['time']) > MaxWait
+        ].index.values
+    
     print(f"  - {len(picked_up)} passengers pickup up")
-    return active_requests[~active_requests.index.isin(picked_up)]
+    print(f"  - {len(dropped_off)} passengers dropped off")
+    print(f"  - {ignored.shape[0]} requests ignored")
 
-def process_assignments(current_time,Trips,Taxis,active_requests,
-                        path_finder,rtv_graph,CabIds):
+    # combine the picked up and ignored passengers to remove them
+    # from the active requests
+    to_remove = set(picked_up) | set(ignored)
+    
+    # try to remove if there is key error, suss out why
+    try:    
+        return active_requests.drop(to_remove)
+    except KeyError as ke:
+        m = re.match(r"\[(\d+)\.\]",ke.args[0])
+        invalid = int(m.group(1))
+        
+        # see if we can get the customer, this will 
+        # indicate its not and ignored error
+        customer = customers[invalid]['passenger']
+        print("\nWeird stuff",customer,customer.num_pickups)
+        
+
+def book_trips(current_time,Trips,Taxis,active_requests,
+               path_finder,rtv_graph,CabIds,customers):
     """
     This function simply sets trips for cabs
     
-    unfortunatly it's slow, but could be argued that this
-    should be parallized
+    TODO: We need to know if a request is re-booked and cancel the
+    old booking
     """    
     
     allocated_requests = set()
@@ -596,8 +621,21 @@ def process_assignments(current_time,Trips,Taxis,active_requests,
         
         # to add a trip to a cab, we need a planned path      
         path = rtv_graph.get_edge_data(trip_requests,cab_id)['path']
-        # print("Path",path)
-        Taxis[cab_id].set_trip(path,
+        
+        # if any(r == 737 for r in trip_requests):
+        #     print(f"Path from booking system for:",cab_id)
+        #     print(path)
+        #     print()
+        
+        # check if any requests have already been allocated
+        # if so, remove the request from the old allocation
+        for r in trip_requests:
+            if r in customers:
+                customers[r]['cab'].remove_booking(r,current_time,path_finder)
+            customers[r] = dict(trip=trip_requests,cab=Taxis[cab_id])             
+        
+        # set the trip in the new cab
+        Taxis[cab_id].book_trip(path,
                                current_time,
                                active_requests.loc[list(trip_requests)],
                                path_finder
@@ -605,21 +643,16 @@ def process_assignments(current_time,Trips,Taxis,active_requests,
         
         allocated_requests |= set(trip_requests)
         allocated_taxis.add(cab_id)
-        
-        # if 375.0 in trip_requests:
-        #     print("From trip requests")
-        #     print(active_requests.loc[list(trip_requests)])
-        
-    ignored = active_requests[
-        ~active_requests.index.isin(allocated_requests)
-        ]
+    
+    # get the unallocated requests
+    unallocated = active_requests.drop(allocated_requests)
     
     # candidate idle cabs
-    idle = CabIds - allocated_taxis
+    potentially_idle = CabIds - allocated_taxis
     
-    # need if these cabs are actually idle
-    idle = [v for v in idle if Taxis[v].is_idle()]
+    # need to check if these cabs are actually idle
+    idle = [v for v in potentially_idle if Taxis[v].is_idle()]
     
-    return ignored,idle
+    return unallocated,idle
     
     

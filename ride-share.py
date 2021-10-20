@@ -17,7 +17,7 @@ from taxis import Taxi
 from utils import (
     Logger,assign_basejt,plot_requests,shortest_path, #is_cost_error,
     check_two_req, add_one_req, check_one_req_one_passenger,
-    process_assignments,update_current_state,shortest_withpassenger
+    book_trips,update_current_state,shortest_withpassenger
     )                   
 from allocate import create_ILP_data_v2, allocate_trips_v2, greedy_assignment
 
@@ -328,27 +328,27 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
         ### check if constraints are satisfied to then generate ###
         ### feasible trips and assign request and vehicles to trips ###
         
-        if len(clique) > 4:    
+        # if len(clique) > 4:    
             
-            # get the sub graph
-            subg = rv.subgraph(clique)
+        #     # get the sub graph
+        #     subg = rv.subgraph(clique)
             
-            # get the node positions
-            pos = nx.networkx.kamada_kawai_layout(subg)
+        #     # get the node positions
+        #     pos = nx.networkx.kamada_kawai_layout(subg)
             
-            # draw the graph
-            fig,ax = plt.subplots(figsize=(10,6))
-            colors = ['tab:orange' if type(n) == str else 'tab:blue' for n in list(subg.nodes)]  
-            nx.draw(subg,node_size=3000,with_labels=True,node_color=colors,
-                    alpha=0.9,width=2,style=":",ax=ax,font_color='white')         
+        #     # draw the graph
+        #     fig,ax = plt.subplots(figsize=(10,6))
+        #     colors = ['tab:orange' if type(n) == str else 'tab:blue' for n in list(subg.nodes)]  
+        #     nx.draw(subg,node_size=3000,with_labels=True,node_color=colors,
+        #             alpha=0.9,width=2,style=":",ax=ax,font_color='white')         
                         
-            ax.set_xlim([1.2*x for x in ax.get_xlim()])
-            ax.set_ylim([1.2*y for y in ax.get_ylim()])
-            plt.tight_layout()
-            plt.axis('off')
-            plt.savefig(r"results/clique.jpg")
+        #     ax.set_xlim([1.2*x for x in ax.get_xlim()])
+        #     ax.set_ylim([1.2*y for y in ax.get_ylim()])
+        #     plt.tight_layout()
+        #     plt.axis('off')
+        #     plt.savefig(r"results/clique.jpg")
             
-            print("\nClique is done!!\n")
+        #     print("\nClique is done!!\n")
         
         # If the clique contains only Int64s and no Strings then it
         # is a number of requests that no vehicle can service, so we
@@ -383,7 +383,7 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
             #     needs to sorted to avoid symetry issues - or use a frozenset
             trip = tuple(clique[:-1])                    
             reqs = len(trip)
-            
+                        
             # Start with the "one request + empty vehicle" trips
             # which will always be feasible because we checked in the rv
             # graph creation.
@@ -468,6 +468,9 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
 # Cycle in hour chunks, so we don't have to check to load
 # new journey times each iteration we only load them on the hour
 active_requests = pd.DataFrame()
+
+# use this to check passenger params if there is an error
+customers = dict() 
 for d in D:
     
     # convert to sun, weekday, sat
@@ -488,8 +491,8 @@ for d in D:
         for w,new_requests in req_byw:
             # this is the current time
             t = w*delta + delta          
-            
-            print(f"\nStarting time window t={t}s\n")
+            start_str = f" Current time t={t}s "
+            print(f"\n{start_str:-^80}\n")
             # step 0: based on current time, process in-flight trips to remove
             # passengers from cabs if they've finished their journey
             
@@ -498,16 +501,20 @@ for d in D:
             #### THIS IS WHEN WE PICKUP AND DROP OFF PASSENGERS ####
             print("Updating current state")
             start_update_state = time.process_time()
-            active_requests = update_current_state(t,
-                                                   active_requests,
-                                                   Taxis)
             
-            # add on the new requests
+            # add on the new requests to the list of active requests
             active_requests = active_requests.append(
                 new_requests.drop(['window','day','hour'],axis=1)
                 )
+            
+            # process pickups and drop offs
+            active_requests = update_current_state(t,
+                                                   active_requests,
+                                                   Taxis,
+                                                   MaxWait,
+                                                   customers)            
             end_update_state = time.process_time()
-            print(f"  - compute time = {end_update_state-start_update_state:0.1f}s\n")
+            print(f"  - processing time = {end_update_state-start_update_state:0.1f}s\n")
                         
             # step 1: create the rv graph
             print(f"RV performance {active_requests.shape[0]} requests:")
@@ -523,10 +530,10 @@ for d in D:
             print(f"  - number of edges: {len(list(rv_graph.edges))}")
             print(f"  - processing time: {end-start:0.1f}s\n")
             
+            print("RTV performance:")
             start_rtv = time.process_time()
             rtv_graph = create_rtv_graph(t,rv_graph,active_requests,times,MaxWait)    
             end_rtv = time.process_time()
-            print("RTV performance:")
             print(f"  - number of edges: {len(list(rtv_graph.edges))}")
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
@@ -535,38 +542,46 @@ for d in D:
             V, R, T, VT, RT = create_ILP_data(rtv_graph)
             Vehicle_Trips1, Requests_Trips1 = allocate_trips(V, R, T, VT, RT)            
             """
+            
+            print("Greedy Assignment performance:")
             start_rtv = time.process_time()
             rt_graph = greedy_assignment(rtv_graph, k)
             end_rtv = time.process_time()
-            print("Greedy Assignment performance:")
             print(f"  - number of edges: {len(list(rtv_graph.edges))}")
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
+            print("Create data performance:")            
             start_rtv = time.process_time()
             V, R, T, VT, RT, TV = create_ILP_data_v2(rtv_graph)
             end_rtv = time.process_time()
-            print("Create data performance:")
             print(f"  - number of edges: {len(list(rtv_graph.edges))}")
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
 
             
-            # Get the Trip assignments            
+            # Get the Trip assignments
+            print("Trip ILP assignment:")
+            start_assign = time.process_time()
             Trips = allocate_trips_v2(V, R, T, VT, RT, TV,
                                       suppress_output=True)
+            end_assign = time.process_time()
+            print(f"  - number of trips assigned: {len(Trips)}")
+            print(f"  - processing time: {end_assign-start_assign:0.1f}s\n")
+            
+            
             
             # This function simply adds trips to Cabs as a "timetable"
             # we only create passengers and add them to cabs in subsequent
-            # iterations
-            start_process_assign = time.process_time()
-            ignored,idle = process_assignments(
-                t,Trips,Taxis,active_requests,path_finder,rtv_graph,CabIds
+            # iterations                 
+            print("Booking assigned trips with cabs:")
+            start_pro_ass = time.process_time()
+            unallocated,idle = book_trips(
+                t,Trips,Taxis,active_requests,path_finder,rtv_graph,
+                CabIds,customers
                 )
-            end_process_assign = time.process_time()
-            
-            print("Processing ILP assignments:")
-            print(f"  - compute time {end_process_assign-start_process_assign:0.1f}s")
-            print(f"  - {ignored.shape[0]}/{active_requests.shape[0]} ignored requests")
-            print(f"  - {len(idle)}/{M} idle cabs")            
+            end_pro_ass = time.process_time()
+            print(f"  - {unallocated.shape[0]}/{active_requests.shape[0]} unallocated requests")
+            print(f"  - {len(idle)}/{M} idle cabs")
+            print(f"  - processing time {end_pro_ass-start_pro_ass:0.1f}s")
             
                         
             ##### STILL NEED TO DO REBALANCING #####

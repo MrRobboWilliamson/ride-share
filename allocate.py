@@ -6,15 +6,16 @@ Created on Fri Sep 24 19:29:35 2021
 """
 import networkx
 from gurobipy import *
+import numpy as np
 
 
 
 def create_ILP_data_v2(rtv_graph):
     
     rtv_nodes = rtv_graph.nodes
-    V = [n for n in rtv_nodes if type(n) == str]# Our Vehicles v
-    R = [n for n in rtv_nodes if type(n) != tuple and type(n) != str]# Our Requests r
-    T = [n for n in rtv_nodes if type(n) == tuple]# Our Trips t
+    V = [n for n in rtv_nodes if isinstance(n,str)] # Our Vehicles v
+    R = [n for n in rtv_nodes if isinstance(n,np.int64)] # Our Requests r
+    T = [n for n in rtv_nodes if isinstance(n,tuple)]# Our Trips t
     
     VT = {} 
     # Our sharability graph of possible assignments of vehicle v to trip t 
@@ -120,6 +121,7 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):
     # X is 1 if vehicle v is assigned to trip t, 0 otherwise
     X = {(v,t): m.addVar(vtype=GRB.BINARY) for v in V 
                                  for t in VT[v].keys()}
+    
     # Z is 1 if request r is unallocated, 0 otherwise
     Z = {(r): m.addVar(vtype=GRB.BINARY) for r in R}
     

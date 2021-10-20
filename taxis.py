@@ -6,11 +6,22 @@ Created on Tue Sep 21 16:03:29 2021
 """
 
 import pandas as pd
+import numpy as np
 from colorama import Fore,Style
 delta = 30
 
-class PickupError(Exception):
+# Excption handling classes
+class LatePickupError(Exception):
     pass
+class LateDropoffError(Exception):
+    pass
+class MultiPickupError(Exception):
+    pass
+class MultiDropoffError(Exception):
+    pass
+
+# for printing pickup counts
+ordinal = lambda n: "%d%s" % (n,"tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
 
 class Taxi():
     
@@ -24,7 +35,6 @@ class Taxi():
         self.taxi_id = taxi_id
         self.max_capacity = max_capacity
         self.passengers = []
-        self.current_route = []
         self.loc = init_loc
         self.max_delay = max_delay
         self.max_wait = max_wait
@@ -39,15 +49,9 @@ class Taxi():
         # flag for error checking
         self.flag = False
         
-           
-    def get_id(self):
-        
-        """
-        Returns the taxi id
-        """
-        return self.taxi_id
     
-    def update_current_state(self,current_time):
+    def update_current_state(self,current_time,
+                             customers):
         """
         
         Parameters
@@ -79,45 +83,48 @@ class Taxi():
         pickups = to_realize[to_realize['pickup'].notnull()]
         dropoffs = to_realize[to_realize['dropoff'].notnull()]
         
-        # errors = [2209,289,2217,716,2983,293,374]
-        # if self.flag or pickups['pickup'].isin(errors):
-        #     print()
-        #     print(self)
-        #     print(to_realize)
-        #     print(self.current_timetable_)
-        #     print(self.passengers)
-        #     print(self.trip_data)
-        #     self.flag = True
-        
-        # go through the pickups
-        for idx,time,loc,r,_ in pickups.to_records():
-                        
-            # pickup the passenger
-            # try:
-                # passenger = self.pickup_passenger(r,loc,time)
-                # self.trip_data[r]['passenger'] = passenger
-            # except PickupError as pe:
-            #     print(self,passenger)
-            #     print(to_realize)
+        # put erronous requests here to track them
+        errors = [2209,289]
+                  
+                  # ,2983,1246,293,716,2217,2371,
+                  # 1328,666,2742,1231,482]
+        if self.flag or any(self.current_timetable_['pickup'].isin(errors)) or\
+            any(pickups['pickup'].isin(errors)):
             
-            # this is to stop the stupid thing from adding
-            # passengers twice!!
-            # if len(self.passengers) > 0:
-            #     if any([r==p.req_id for p in self.passengers]):
-            #         continue
-                    
+            print()
+            print(self)
+            print(to_realize)
+            print(self.current_timetable_)
+            print(self.passengers)
+            # print(self.trip_data)
+            self.flag = True
+            print()
+            if any(dropoffs['dropoff'].isin(errors)):
+                self.flag = False
+        
+        # go through and action pickups
+        for idx,time,loc,r,_ in pickups.to_records():
+            
+            # pickup the passenger
             passenger = self.pickup_passenger(r,loc,time)
+            customers[int(r)]['passenger'] = passenger
+            
+            # assign the passenger object to the trip
+            # data for removal at dropoff
             self.trip_data[r]['passenger'] = passenger
                 
         # go though the dropoffs
         for idx,time,loc,_,r in dropoffs.to_records():
             
             # pop the trip details
-            dets = self.trip_data.pop(r) 
+            dets = self.trip_data.pop(r)
             self.dropoff_passenger(dets['passenger'],loc,time)
+            
+            # finally remove the customer from the customers dict
+            customers.pop(int(r))
         
         # return a list of the pickups to remove from active requests.
-        return list(pickups['pickup'].values)
+        return list(pickups['pickup'].values),list(dropoffs['dropoff'].values)
     
  
     def get_passengers(self,time):
@@ -170,20 +177,18 @@ class Taxi():
             max_delay=self.max_delay
             )
         
-        # add the passenger to the cab
+        # add the passenger to the cab and pick them up
         self.passengers.append(passenger)
-        passenger.set_status(2)
-        passenger.set_pickup_time(time) # this will check the wait constraint
         
-        # try:        
-        #     passenger.set_pickup_time(time) # this will check the wait constraint
-        #     if r == 61:
-        #         print(passenger)
-        # except AssertionError as ae:
-        #     print("We have a problem!")
-        #     print(f"  - passenger",r)
-        #     print(f"  - pickup time: {time}, request time: {self.trip_data[r]['time']}")
-        #     raise PickupError(passenger)
+        # check that our capacity isn't breached
+        assert len(self.passengers) <= self.max_capacity
+        
+        try:        
+            passenger.pick_me_up(time)
+        except LatePickupError as e:
+            print(f"\nLate pickup {e}\n")  
+        except MultiPickupError as e:
+            print(f"\nMulti pickup {e}\n")  
         
         # record the event
         self.logger.make_log(
@@ -201,28 +206,30 @@ class Taxi():
         travel time and entire request to drop off time was
         """
         self.passengers.remove(passenger)
-        passenger.set_drop_off_time(time)
-        passenger.set_status(3)
+        
+        try:
+            # try to drop off the passenger to     
+            passenger.drop_me_off(time)            
+        except LateDropoffError as e:      
+            print(f"\nLate dropoff {e}\n")  
+        except MultiDropoffError as e:            
+            print(f"\nMulti dropoff {e}\n")         
         
         # record the event
         self.logger.make_log(
             time,passenger.req_id,self.taxi_id,action='dropoff',location=loc
             )
-
-
-    def get_current_route(self):
-        
-        """
-        Returns the taxi's current route
-        """
-        return self.current_route
     
     
-    def set_trip(self,path,current_time,requests,path_finder):
+    def book_trip(self,path,current_time,requests,path_finder):
         """
         PARAMETERS
         ----------
         path : list of requests and pickup / dropoff nodes
+        requests : is the slice of the active requests that
+            contains the requests assigned to this trip.
+        path_finder : is a utils.ShortestPathFinder object that is 
+            used to assign intermediate nodes in the timetable.
         
         when we set a trip, we set the timetable, and the first
         item, will be the next node
@@ -237,23 +244,71 @@ class Taxi():
         
         # update the timetable. drop dups incase we have overlaps
         # test without if it's slow
-        time,first_node = self.find_me(current_time)
-        
-        # if 633 in requests.index:
-        #     print(requests)
-        #     print(current_time)
-        #     print(time)
-        #     print(self.trip_data)
-        
-        # self.current_timetable_ = self.current_timetable_.append(
-        #     path_finder.get_timetable(first_node,path,time
-        #         )
-        #     ).sort_values(['time']).drop_duplicates().reset_index(drop=True)
-        
+        time,first_node = self.find_me(current_time)                
         self.current_timetable_ = path_finder.get_timetable(
             first_node,path,time
             )
-                # ).sort_values(['time']).drop_duplicates().reset_index(drop=True)
+        
+        
+    def reset_booking(self,jobs,current_time,path_finder):
+        """
+        Creates a new timetable for the remaining jobs
+        """
+
+        # turn the jobs into a path
+        path = []
+        for i,t,loc,pickup,dropoff in jobs.to_records():
+            
+            # check if the dropoff is nan
+            if np.isnan(dropoff):
+                path.append(
+                    (pickup,loc,True)
+                    )
+            else:
+                path.append(
+                    (dropoff,loc,False)
+                    )
+        
+        # print("\nPath from reset_booking:",self)
+        # print(path)
+        # print()
+        
+        time,first_node = self.find_me(current_time)
+        self.current_timetable_ = path_finder.get_timetable(
+            first_node,path,time
+            )
+        
+    
+    def remove_booking(self,r,current_time,path_finder):
+        """
+        Removes a request from the current timetable
+        
+        Reset booking to go from current (next) location to
+        the next event in the timetable
+        """
+        
+        # remove the bookings from the timetable and the trip from the 
+        # trip data
+        self.trip_data.pop(r)        
+        to_remove = self.current_timetable_[
+            (self.current_timetable_['pickup']==r) |
+            (self.current_timetable_['dropoff']==r)].index
+        tt = self.current_timetable_.drop(to_remove)
+        
+        # the jobs are any row of the tt with a pickup or dropoff entry
+        jobs = tt.loc[:,['pickup','dropoff']].dropna(axis=0,how='all')
+        
+        # if no jobs clear the timetable and update the cab location.           
+        if jobs.empty:
+            # if any events remain, find the next event.  
+            next_time,next_loc = self.find_me(current_time)
+            self.current_timetable_ = pd.DataFrame()
+            self.loc = next_loc
+        
+        # otherwise, use the jobs and current location to rebuild the
+        # timetable.
+        else:
+            self.reset_booking(tt.loc[jobs.index],current_time,path_finder)                                                  
                         
         
     def find_me(self,current_time):
@@ -315,160 +370,75 @@ class Passenger():
         self.earliest_arrival = req_time + base_jt
         self.latest_arrival = self.earliest_arrival + max_delay + max_wait
         
-    def get_id(self):
+        # for pickups and drop offs check how many times
+        # a passenger is picked up or dropped off
+        self.num_pickups = 0
+        self.num_dropoffs = 0
+                
         
-        """
-        Returns the passenger request id
-        """
-        return self.req_id
-    
-    
-    def get_total_delay(self):
-        return self.wait_time + self.get_travel_delay()
-    
-    
-    def get_travel_delay(self):        
-        return max(0,self.travel_time - self.base_jt)
-    
- 
-    def get_pickup_node(self):
-        
-        """
-        Returns the passenger's pickup node
-        """
-        return self.pickup_node
-   
-    
-    def get_drop_off_node(self):
-        
-        """
-        Returns the passenger's drop off node
-        """
-        return self.drop_off_node
-    
-    
-    def get_req_day(self):
-        
-        """
-        Returns the passenger's request day
-        """
-        return self.req_day
-    
-    
-    def get_req_time(self):
-        
-        """
-        Returns the passenger's time
-        """
-        return self.req_time
-
-    
-    def get_expected_duration(self):
-        
-        """
-        Returns the passenger's expected ride time
-        """
-        return self.expected_duration
-    
-    
-    def get_status(self):
-        
-        """
-        Returns the passenger's status
-            0 = Waiting for assignment
-            1 = Assigned and waiting for pickup
-            2 = Picked up and in Taxi
-            3 = Dropped off
-        """
-        return self.status
-    
-    
-    def set_status(self, new_status):
-        
-        """
-        Sets the passenger's status
-            0 = Waiting for assignment
-            1 = Assigned and waiting for pickup
-            2 = Picked up and in Taxi
-            3 = Dropped off
-        """
-        self.status = new_status
-        
-        
-    def get_pickup_time(self):
-        """
-        Gets the passenger's pickup time
-        """
-        return self.pickup_time
-        
-        
-    def set_pickup_time(self, time):
+    def pick_me_up(self, time):
         """
         Sets the passenger's pickup time
         """
         
         # check pickup
-        try:
-            assert time - self.req_time <= self.max_wait  
-        except AssertionError:
-            self.wait_time = time - self.req_time
-            print(f"\n{Fore.RED}Late pickup {self}: +{self.wait_time}s{Style.RESET_ALL}\n")
-        
-        # assign pickup and wait times  
-        self.wait_time = time - self.req_time
         self.pickup_time = time
+        self.wait_time = time - self.req_time
+        self.num_pickups += 1
         
-        
-    def get_drop_off_time(self):
-        """
-        Gets the passenger's drop off time
-        """
-        return self.drop_off_time
-        
-        
-    def set_drop_off_time(self, time):
-        """
-        Sets the passenger's drop off time
-        """
-        
-        # check dropoff
-        # set the final travel time
-        self.travel_time = time - self.pickup_time
-        
+        # check that the wait time is less than the constraint
         try:
-            # check this against the base journey time
-            assert self.travel_time - self.base_jt <= self.max_delay
+            assert self.wait_time <= self.max_wait
         except AssertionError:
-            self.delay_time = self.travel_time - self.base_jt
-            print(f"\n{Fore.RED}Late dropoff {self}: +{self.delay_time}s{Style.RESET_ALL}\n")
-            
-
-        # finally set the drop off time     
-        self.delay_time = self.travel_time - self.base_jt
-        self.drop_off_time = time
-
-
-    def get_wait_time(self):
-        """
-        Gets the passenger's wait time
-        """
-        return self.wait_time
+            # add num_str in case we never see the multi drop error
+            num_str = ordinal(self.num_pickups)
+            message = f"{Fore.RED}{self} ({num_str}): +{self.wait_time}s"+\
+                f"{Style.RESET_ALL}"
+            raise LatePickupError(message)
         
-    
-    def get_travel_time(self):
+        # check that we only pickup passengers once
+        try:
+            assert self.num_pickups <= 1
+        except AssertionError:
+            message = f"{Fore.RED}{self}: {ordinal(self.num_pickups)}"+\
+                f"{Style.RESET_ALL}"
+            raise MultiPickupError(message)
+        
+        
+    def drop_me_off(self, time):
         """
-        Gets the passenger's travel time
+        This function:
+            - sets the passenger's drop off time
+            - counts the number of times dropped off
+            - checks for errors on both
         """
-        return self.travel_time
-    
+        
+        # set parameters
+        self.drop_off_time = time
+        self.travel_time = self.drop_off_time - self.pickup_time
+        self.delay_time = self.travel_time - self.base_jt
+        self.num_dropoffs += 1
+        
+        # check that the delay is within the constraint
+        try:           
+            assert self.delay_time <= self.max_delay
+        except AssertionError:
+            # add num_str in case we never see the multi drop error
+            num_str = ordinal(self.num_dropoffs)
+            message = \
+                f"{Fore.RED}{self} ({num_str}): +{self.delay_time}s"+\
+                    f"{Style.RESET_ALL}"
+            raise LateDropoffError(message)
+        
+        # check the number for dropoffs is less than or equal to 1    
+        try:
+            assert self.num_dropoffs <= 1
+        except AssertionError:
+            message = f"{Fore.RED}{self}: {ordinal(self.num_dropoffs)}"+\
+                f"{Style.RESET_ALL}"
+            raise MultiDropoffError(message)
+            
+            
     def __repr__(self):
         
-        return f"<req_id: {self.req_id}>"
-        
-        
-# if __name__ == "__main__":
-#     t1 = Taxi(1,2)
-#     t2 = Taxi(2,2)
-#     p1 = Passenger(1, 3, 9, 0, 650, 5)
-#     p3 = Passenger(2, 6, 10, 0, 651, 10)
-#     p4 = Passenger(3, 8, 3, 0, 652, 32)
+        return f"<req_id: {int(self.req_id)}>"
