@@ -470,7 +470,8 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
 # new journey times each iteration we only load them on the hour
 active_requests = pd.DataFrame()
 
-# use this to check passenger params if there is an error
+# This collection is used to shuffle customer bookings
+# between cabs
 customers = dict() 
 for d in D:
     

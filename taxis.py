@@ -50,8 +50,8 @@ class Taxi():
         self.flag = False
         
     
-    def update_current_state(self,current_time,
-                             customers):
+    def update_current_state(self,current_time):#,
+                             # customers):
         """
         
         Parameters
@@ -84,9 +84,7 @@ class Taxi():
         dropoffs = to_realize[to_realize['dropoff'].notnull()]
         
         # # put erronous requests here to track them
-        # errors = [2209,289]                  
-        #           # ,2983,1246,293,716,2217,2371,
-        #           # 1328,666,2742,1231,482]
+        # errors = [14555,14635]
         # if self.flag or any(self.current_timetable_['pickup'].isin(errors)) or\
         #     any(pickups['pickup'].isin(errors)):
             
@@ -106,7 +104,7 @@ class Taxi():
             
             # pickup the passenger
             passenger = self.pickup_passenger(r,loc,time)
-            customers[int(r)]['passenger'] = passenger
+            # customers[int(r)]['passenger'] = passenger
             
             # assign the passenger object to the trip
             # data for removal at dropoff
@@ -120,7 +118,7 @@ class Taxi():
             self.dropoff_passenger(dets['passenger'],loc,time)
             
             # finally remove the customer from the customers dict
-            customers.pop(int(r))
+            # customers.pop(int(r))
         
         # return a list of the pickups to remove from active requests.
         return list(pickups['pickup'].values),list(dropoffs['dropoff'].values)
@@ -288,11 +286,26 @@ class Taxi():
         
         # remove the bookings from the timetable and the trip from the 
         # trip data
-        self.trip_data.pop(r)        
+        self.trip_data.pop(r)
         to_remove = self.current_timetable_[
-            (self.current_timetable_['pickup']==r) |
-            (self.current_timetable_['dropoff']==r)].index
+                (self.current_timetable_['pickup']==r) |
+                (self.current_timetable_['dropoff']==r)].index
         tt = self.current_timetable_.drop(to_remove)
+        
+        # try:
+        #     to_remove = self.current_timetable_[
+        #         (self.current_timetable_['pickup']==r) |
+        #         (self.current_timetable_['dropoff']==r)].index
+        #     tt = self.current_timetable_.drop(to_remove)
+        # except KeyError:
+        #     print("\nNo timetable to remove from:",self)
+        #     print("request:",r)
+        #     print()
+        #     # if any events remain, find the next event.  
+        #     next_time,next_loc = self.find_me(current_time)
+        #     self.current_timetable_ = pd.DataFrame()
+        #     self.loc = next_loc
+        #     return
         
         # the jobs are any row of the tt with a pickup or dropoff entry
         jobs = tt.loc[:,['pickup','dropoff']].dropna(axis=0,how='all')

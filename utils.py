@@ -577,8 +577,8 @@ def update_current_state(current_time,active_requests,Taxis,MaxWait,customers):
             # print('idle')
             continue        
         else:
-            picked,dropped = cab.update_current_state(current_time,
-                                                      customers)
+            picked,dropped = cab.update_current_state(current_time)#,
+                                                      # customers)
             picked_up += picked
             dropped_off += dropped
     
@@ -587,13 +587,20 @@ def update_current_state(current_time,active_requests,Taxis,MaxWait,customers):
         (current_time-active_requests['time']) > MaxWait
         ].index.values
     
+    # # remove ignored customers from the customer dictionary.
+    # for ignr in set(ignored)-set(picked_up):
+    #     if ignr in customers:
+    #         customers.pop(ignr)    
     print(f"  - {len(picked_up)} passengers pickup up")
     print(f"  - {len(dropped_off)} passengers dropped off")
     print(f"  - {ignored.shape[0]} requests ignored")
 
     # combine the picked up and ignored passengers to remove them
-    # from the active requests
+    # from the active requests and the customer collection
     to_remove = set(picked_up) | set(ignored)
+    for cust in to_remove:
+        if cust in customers:
+            customers.pop(cust) 
     return active_requests.drop(to_remove)
     # # try to remove if there is key error, suss out why
     # try:    
