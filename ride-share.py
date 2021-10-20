@@ -590,7 +590,7 @@ for d in D:
             rebalance = rebalance(idle, unallocated, times, Taxis,
                                   suppress_output=True)
             end_rebalance = time.process_time()
-            print(f"  - {rebalance.shape[0]} redirected vehicles")
+            print(f"  - {len(rebalance)} redirected vehicles")
             print(f"  - processing time {end_rebalance-start_rebalance:0.1f}s")            
             ##### STILL NEED TO DO REBALANCING #####
             
