@@ -184,7 +184,62 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):
     # return Vehicle_Trips, Request_Trips
 
 
+def rebalance(V, unallocated, times, Taxis, suppress_output=False):    
 
+    m = Model('Rebalnce')
+    
+    R = unallocated.index
+    
+    # get all of our journey times for all of our vehicle-request combos
+    jt = {}
+    for v in V:
+        jt[v] = {}
+        for r in R:
+            jt[v][r] = times[Taxis['v2902'].loc, unallocated.loc[r,'from_node']]
+    
+    if suppress_output:
+        m.setParam('OutputFlag',0)
+    
+    # Y is 1 if vehicle v is assigned to request r, 0 otherwise
+    Y = {(v,r): m.addVar(vtype=GRB.BINARY) for v in V 
+                                 for r in R}
+    # create a variable for the minimum value of vehicles or requests
+    if len(V) > len(R):
+        minVR = {('a'): m.addVar(lb = len(R), ub = len(R))}
+    else:
+        minVR = {('a'): m.addVar(lb = len(V), ub = len(V))}
+   
+    # the objective function minimizes the travel time of idle vehicles to 
+    # get to unallocated request origin nodes
+    m.setObjective(quicksum(Y[v,r]*jt[v][r] for v in V for r in R)
+                                                     , GRB.MINIMIZE)
+
+    for v in V:
+        # each vehicle must be allocated only up to one request
+        m.addConstr(quicksum(Y[v,r] for r in R) <= 1)
+    
+    for r in R:
+        # each request must allocated only up to one vehicle
+        m.addConstr(quicksum(Y[v,r] for v in V) <= 1)
+    
+    # the number of rebalanced vehicle-request combos must be equal to the 
+    # minimum of number of idle vehicles or number of unallocated requests
+    m.addConstr(quicksum(Y[v,r] for v in V for r in R) == minVR['a'])
+    
+    m.optimize()
+    
+    Rebalanced = dict()
+    for v in V:
+        for r in R:
+            if Y[v,r].x > 0.9:
+                Rebalanced[v] = unallocated.loc[r,'from_node']
+    
+    # return a dictionary of vehicles with their new destination node
+    return Rebalanced
+
+
+
+"""
 '''
 Original attempts at the allocation functions
 '''
@@ -282,3 +337,4 @@ def allocate_trips(Vehicles, Requests, Trips, TripCosts, RequestTrips):
                 Request_Trips.append((Requests[r], Trips[t]))
     
     return Vehicle_Trips, Request_Trips 
+"""

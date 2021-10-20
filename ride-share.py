@@ -19,7 +19,8 @@ from utils import (
     check_two_req, add_one_req, check_one_req_one_passenger,
     book_trips,update_current_state,shortest_withpassenger
     )                   
-from allocate import create_ILP_data_v2, allocate_trips_v2, greedy_assignment
+from allocate import (create_ILP_data_v2, allocate_trips_v2, greedy_assignment,
+                      rebalance)
 
 # cost error
 class CostError(Exception):
@@ -585,7 +586,13 @@ for d in D:
             print(f"  - {len(idle)}/{M} idle cabs")
             print(f"  - processing time {end_pro_ass-start_pro_ass:0.1f}s")
             
-                        
+            print("Rebalancing idle vehciles:")
+            start_rebalance = time.process_time()
+            rebalanced = rebalance(idle, unallocated, times, Taxis,
+                                  suppress_output=True)
+            end_rebalance = time.process_time()
+            print(f"  - {len(rebalanced)} redirected vehicles")
+            print(f"  - processing time {end_rebalance-start_rebalance:0.1f}s")            
             ##### STILL NEED TO DO REBALANCING #####
             
             # if t == 3630:
