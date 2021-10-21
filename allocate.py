@@ -184,7 +184,7 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):
     # return Vehicle_Trips, Request_Trips
 
 
-def rebalance(V, unallocated, times, Taxis, suppress_output=False):    
+def rebalance(V,unallocated,times,Taxis,suppress_output=False):    
 
     m = Model('Rebalnce')
     
@@ -232,7 +232,11 @@ def rebalance(V, unallocated, times, Taxis, suppress_output=False):
     for v in V:
         for r in R:
             if Y[v,r].x > 0.9:
-                Rebalanced[v] = unallocated.loc[r,'from_node']
+                # allocate a path to the vehicle
+                # a path is [(request_id,node,is_pickup),...]
+                record = unallocated.loc[r]
+                Rebalanced[v] = [(r,unallocated['from_node'].values[0],True),
+                                 (r,unallocated['to_node'].values[0],False)]
     
     # return a dictionary of vehicles with their new destination node
     return Rebalanced

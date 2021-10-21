@@ -17,7 +17,7 @@ from taxis import Taxi
 from utils import (
     Logger,assign_basejt,plot_requests,shortest_path, #is_cost_error,
     check_two_req, add_one_req, check_one_req_one_passenger,
-    book_trips,update_current_state,shortest_withpassenger
+    book_trips,update_current_state,shortest_withpassenger,balancing_act
     )                   
 from allocate import (create_ILP_data_v2, allocate_trips_v2, greedy_assignment,
                       rebalance)
@@ -515,7 +515,8 @@ for d in D:
                                                    active_requests,
                                                    Taxis,
                                                    MaxWait,
-                                                   customers)            
+                                                   customers,
+                                                   path_finder)            
             end_update_state = time.process_time()
             print(f"  - processing time = {end_update_state-start_update_state:0.1f}s\n")
                         
@@ -586,18 +587,30 @@ for d in D:
             print(f"  - {len(idle)}/{M} idle cabs")
             print(f"  - processing time {end_pro_ass-start_pro_ass:0.1f}s")
             
-            print("Rebalancing idle vehciles:")
+            # Allocate unallocated trips idle cabs
+            print("\nRebalancing idle vehciles:")
             start_rebalance = time.process_time()
             rebalanced = rebalance(idle, unallocated, times, Taxis,
                                   suppress_output=True)
             end_rebalance = time.process_time()
             print(f"  - {len(rebalanced)} redirected vehicles")
             print(f"  - processing time {end_rebalance-start_rebalance:0.1f}s")            
-            ##### STILL NEED TO DO REBALANCING #####
             
-            # if t == 3630:
-            #     break
-        
+            # Apply allocations
+            print("\nBooking unallocated requests with idle cabs")
+            start_balancing_act = time.process_time()
+            poor_sods,still_idle = balancing_act(t,
+                                                  rebalanced,
+                                                  Taxis,
+                                                  unallocated,
+                                                  path_finder,
+                                                  idle,
+                                                  customers)
+            eng_balancing_act = time.process_time()
+            print(f"  - {len(still_idle)} vehicles could not be rebalanced")
+            print(f"  - {poor_sods.shape[0]} poor souls left out in the cold")
+            
+            
         # dump the logs
         event_logger.dump_logs(d,h)
         

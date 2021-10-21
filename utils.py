@@ -558,7 +558,8 @@ def check_two_req(t,rv_graph,rtv_graph,times,active_requests,
     return rtv_graph
 
 
-def update_current_state(current_time,active_requests,Taxis,MaxWait,customers):
+def update_current_state(current_time,active_requests,Taxis,MaxWait,customers,
+                         path_finder):
     """
     Purpose:
         - update cab state: pickup and dropoff passengers
@@ -574,11 +575,11 @@ def update_current_state(current_time,active_requests,Taxis,MaxWait,customers):
                 
         # skip if the cab is idle
         if cab.is_idle():
-            # print('idle')
             continue        
         else:
-            picked,dropped = cab.update_current_state(current_time)#,
-                                                      # customers)
+            picked,dropped = cab.update_current_state(current_time,
+                                                      customers,
+                                                      path_finder)
             picked_up += picked
             dropped_off += dropped
     
@@ -599,7 +600,7 @@ def update_current_state(current_time,active_requests,Taxis,MaxWait,customers):
     # from the active requests and the customer collection
     to_remove = set(picked_up) | set(ignored)
     for cust in to_remove:
-        if cust in customers:
+        if cust in customers and not customers[cust]['is_rebalance']:
             customers.pop(cust) 
     return active_requests.drop(to_remove)
     # # try to remove if there is key error, suss out why
@@ -630,31 +631,25 @@ def book_trips(current_time,Trips,Taxis,active_requests,
         
         # to add a trip to a cab, we need a planned path      
         path = rtv_graph.get_edge_data(trip_requests,cab_id)['path']
-        
-        # if any(r == 737 for r in trip_requests):
-        #     print(f"Path from booking system for:",cab_id)
-        #     print(path)
-        #     print()
-        
+                
         # check if any requests have already been allocated
         # if so, remove the request from the old allocation
         for r in trip_requests:
             if r in customers:
                 customers[r]['cab'].remove_booking(r,current_time,path_finder)
-            customers[r] = dict(trip=trip_requests,cab=Taxis[cab_id])             
+            customers[r] = dict(cab=Taxis[cab_id],is_rebalance=False)
         
         # set the trip in the new cab
         Taxis[cab_id].book_trip(path,
                                current_time,
                                active_requests.loc[list(trip_requests)],
-                               path_finder
-                               )
+                               path_finder)
         
         allocated_requests |= set(trip_requests)
         allocated_taxis.add(cab_id)
     
     # get the unallocated requests
-    unallocated = active_requests.drop(allocated_requests)
+    unallocated = active_requests.copy().drop(allocated_requests)
     
     # candidate idle cabs
     potentially_idle = CabIds - allocated_taxis
@@ -663,5 +658,43 @@ def book_trips(current_time,Trips,Taxis,active_requests,
     idle = [v for v in potentially_idle if Taxis[v].is_idle()]
     
     return unallocated,idle
+
+
+def balancing_act(current_time,allocations,Taxis,unallocated,
+               path_finder,idle,customers):
+    """
+    This function allocates unallocated requests to 
+    idle vehicles
+    """    
+    
+    allocated_requests = set()
+    allocated_taxis = set()
+    for cab_id,path in allocations.items():
+        
+        # check if any requests have already been allocated
+        # if so, remove the request from the old allocation
+        # if r in customers:
+        #     customers[r]['cab'].remove_booking(r,current_time,path_finder)
+        r = path[0][0]
+        if r in customers:        
+            customers[r]['cab'].remove_booking(r,current_time,path_finder)
+        customers[r] = dict(cab=Taxis[cab_id],is_rebalance=True)    
+        
+        # set the trip in the new cab
+        Taxis[cab_id].book_trip(path,
+                               current_time,
+                               unallocated.loc[[r],:],
+                               path_finder)
+        
+        allocated_requests.add(r)
+        allocated_taxis.add(cab_id)
+    
+    # get the unallocated requests
+    poor_sods = unallocated.drop(allocated_requests)
+    
+    # candidate idle cabs
+    still_idle = set(idle) - allocated_taxis
+    
+    return poor_sods,idle
     
     

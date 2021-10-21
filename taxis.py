@@ -50,8 +50,7 @@ class Taxi():
         self.flag = False
         
     
-    def update_current_state(self,current_time):#,
-                             # customers):
+    def update_current_state(self,current_time,customers,path_finder):
         """
         
         Parameters
@@ -100,7 +99,16 @@ class Taxi():
         #         self.flag = False
         
         # go through and action pickups
+        rebalances = set()
         for idx,time,loc,r,_ in pickups.to_records():
+            
+            # if this is a rebalance, do not, pickup
+            # just remove the booking
+            if customers[r]['is_rebalance']:
+                self.remove_booking(r,current_time,path_finder)
+                rebalances.add(r)
+                customers.pop(r)
+                continue
             
             # pickup the passenger
             passenger = self.pickup_passenger(r,loc,time)
@@ -121,7 +129,8 @@ class Taxi():
             # customers.pop(int(r))
         
         # return a list of the pickups to remove from active requests.
-        return list(pickups['pickup'].values),list(dropoffs['dropoff'].values)
+        return (list(set(pickups['pickup'].values)-rebalances),
+                list(dropoffs['dropoff'].values))
     
  
     def get_passengers(self,time):
@@ -238,7 +247,7 @@ class Taxi():
         
         # add this new trip the current trip data
         self.trip_data = {**self.trip_data,**requests.to_dict('index')}
-        
+                
         # update the timetable. drop dups incase we have overlaps
         # test without if it's slow
         time,first_node = self.find_me(current_time)                
