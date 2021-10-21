@@ -195,7 +195,7 @@ def rebalance(V,unallocated,times,Taxis,suppress_output=False):
     for v in V:
         jt[v] = {}
         for r in R:
-            jt[v][r] = times[Taxis['v2902'].loc, unallocated.loc[r,'from_node']]
+            jt[v][r] = times[Taxis[v].loc, unallocated.loc[r,'from_node']]
     
     if suppress_output:
         m.setParam('OutputFlag',0)
