@@ -321,9 +321,6 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
     Explore the cliques of the rv graph to find feasible trips
     """
     rtv_graph = nx.Graph()
-    
-    ### testing rtv_graph
-    rtv_graph = nx.Graph()
     for clique in nx.algorithms.clique.find_cliques(rv_graph):
     
         ### check if constraints are satisfied to then generate ###
@@ -353,22 +350,9 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
         
         # If the clique contains only Int64s and no Strings then it
         # is a number of requests that no vehicle can service, so we
-        # assign them to the "unassigned" node. DO WE JUST DISCARD?
-        # RW- assigning them to an "unassigned" trip sounds right
-        
-        # TF- Thinking about it, I reckon discarding is probably best 
-        # as they are infeasible and won't make any difference to the
-        # optimal solution in the ILP. We can just check after 
-        # optimisation which requests have not been allocated.
-        # RW - not necessarily, we need these guys are used to 
-        # rebalance the fleet
+        # ignore them for now, to be picked up in rebalancing
         if all(isinstance(i, type(clique[0])) for i in clique[1:]):
             pass
-            """
-            for r in clique:
-            # add 'rt' edge
-                rtv_graph.add_edge(r,"unassigned", edge_type = 'rt')
-            """
         else:
             # Sort the clique in request order with vehicle at the end       
             clique = sorted(clique, key=lambda x: (x is not None, '' 
@@ -377,11 +361,7 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
             # Get the vehicle name, number of passengers in the vehicle,
             # trip and the number of requests in the trip
             vehicle = clique[-1]
-            # print(vehicle)
             num_passengers = len(Taxis[vehicle].get_passengers(t))
-            
-            # RW: if we're going to use 'trip' as a node id, I think it
-            #     needs to sorted to avoid symetry issues - or use a frozenset
             trip = tuple(clique[:-1])                    
             reqs = len(trip)
                         
@@ -400,11 +380,10 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
                 
                 rtv_graph = check_one_req_one_passenger(t,Taxis,rv_graph
                             ,rtv_graph,times,active_requests,vehicle,
-                            trip,MaxWait) #,MaxQLoss)
+                            trip,MaxWait)
                                            
             # finally deal with the "more than one request" trips
             else:
-        
                 # if the vehicle is empty we add all the individual
                 # requests in the clique as seperate, one request trips 
                 # and check all the pairwise shared request trips
@@ -414,14 +393,9 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
                         rtv_graph = add_one_req(t,rtv_graph,rv_graph, 
                                     sub_trip,vehicle,active_requests)
                     
-                    # RW: not sure if it's guaranteed, but I think combinations
-                    # preserves order, so you might not need to sort again
-                    # later on| TF: Sweet :)
                     paired_trips = itertools.combinations(trip,2)
                     
                     for pair in paired_trips:
-                        # may not need to sort, can save a little bit of time
-                        # pair_trip = tuple(sorted(pair))
                         rtv_graph = check_two_req(t,rv_graph,rtv_graph,
                                 times,active_requests,vehicle,
                                 pair,MaxWait)
