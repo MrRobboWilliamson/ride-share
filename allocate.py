@@ -4,11 +4,8 @@ Created on Fri Sep 24 19:29:35 2021
 
 @author: troyf
 """
-import networkx
-from gurobipy import *
+from gurobipy import Model,GRB,quicksum
 import numpy as np
-
-
 
 def create_ILP_data_v2(rtv_graph):
     
@@ -66,7 +63,7 @@ def greedy_assignment(rtv_graph, k):
     # comprehension
     for u,v,d in rtv_edges:
         if d['edge_type']=='tv':
-            greedy_dict[(u,v)] =[d['wait']+d['delay'], d['rnum'], 0]    
+            greedy_dict[(u,v)] = [d['wait']+d['delay'], d['rnum'], 0]    
     
     # we work down from max capacity to single request trips
     while k > 0:
@@ -103,11 +100,9 @@ def greedy_assignment(rtv_graph, k):
     return rtv_graph
 
 
-
 def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):    
 
 
-    max_psg = 2 # maximum Requests per taxi
     unallocated_cost = 99999 # arbitrary cost of not allocating a passenger
     
     m = Model('Allocations')
@@ -126,7 +121,7 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):
     # vehicle-trip assignment plus the high cost of not servicing a request
     m.setObjective(quicksum(X[v,t]*VT[v][t][0] for v in V for t in VT[v].keys())
                            + quicksum(Z[r] * unallocated_cost for r in R)
-                           , GRB.MINIMIZE)
+                           ,GRB.MINIMIZE)
     
     for v in V:
         # each vehicle must take up to only one "real" trip
@@ -158,7 +153,7 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):
 
 def rebalance(V,unallocated,times,Taxis,suppress_output=False):    
 
-    m = Model('Rebalnce')
+    m = Model('Rebalance')
     
     R = unallocated.index
     
@@ -167,7 +162,7 @@ def rebalance(V,unallocated,times,Taxis,suppress_output=False):
     for v in V:
         jt[v] = {}
         for r in R:
-            jt[v][r] = times[Taxis[v].loc, unallocated.loc[r,'from_node']]
+            jt[v][r] = times[Taxis[v].loc,unallocated.loc[r,'from_node']]
     
     if suppress_output:
         m.setParam('OutputFlag',0)
@@ -206,7 +201,6 @@ def rebalance(V,unallocated,times,Taxis,suppress_output=False):
             if Y[v,r].x > 0.9:
                 # allocate a path to the vehicle
                 # a path is [(request_id,node,is_pickup),...]
-                record = unallocated.loc[r]
                 Rebalanced[v] = [(r,unallocated['from_node'].values[0],True),
                                  (r,unallocated['to_node'].values[0],False)]
     

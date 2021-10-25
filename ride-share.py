@@ -4,7 +4,7 @@ This is the model
 """
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 # from matplotlib.lines import Line2D
 import time
 import networkx as nx
@@ -15,7 +15,7 @@ import itertools
 from source_data import JourneyTimes, Requests
 from taxis import Taxi
 from utils import (
-    Logger,assign_basejt,plot_requests,shortest_path, #is_cost_error,
+    Logger,assign_basejt,shortest_path,format_time,#is_cost_error,plot_requests,
     check_two_req, add_one_req, check_one_req_one_passenger,
     book_trips,update_current_state,shortest_withpassenger,balancing_act
     )                   
@@ -418,29 +418,6 @@ def create_rtv_graph(t,rv,active_requests,times,MaxWait):
                 
     return rtv_graph    
 
-### If you want to visualise the cliques ###
-# if len(clique) > 4:
-    
-#     # color the cabs orange
-#     print(clique)
-#     subg = rv.subgraph(clique)
-#     fig,ax = plt.subplots(figsize=(10,6))
-#     colors = ['tab:orange' if type(n) == str else 'tab:blue' for n in list(subg.nodes)]    
-#     nx.draw(subg,node_size=30,with_labels=False,node_color=colors,
-#             alpha=0.5,width=1,ax=ax)
-
-#     break
-
-### Evaluation
-# create rv graph
-# create rtv graph
-# assign vehicles to trips
-# requests that can't be satisfied stay in the request pool
-# def shareable(requests):
-#     """
-#     Get shareable rides
-#     """
-
 # Cycle in hour chunks, so we don't have to check to load
 # new journey times each iteration we only load them on the hour
 active_requests = pd.DataFrame()
@@ -448,6 +425,9 @@ active_requests = pd.DataFrame()
 # This collection is used to shuffle customer bookings
 # between cabs
 customers = dict() 
+
+# This collection is used to capture computational statistics
+computation_log = []
 for d in D:
     
     # convert to sun, weekday, sat
@@ -466,9 +446,16 @@ for d in D:
         # get new requests in 30s windows and add them to the current set of 
         # requests
         for w,new_requests in req_byw:
+            
+            # generate a new record for this window
+            comp_record = dict()
+            
             # this is the current time
-            t = w*delta + delta          
-            start_str = f" Current time t={t}s "
+            t = w*delta + delta
+            comp_record['t'] = t
+            comp_record['num_new_requests'] = new_requests.shape[0]            
+            start_str = f" Current time t={t}s ({format_time(h,t)},"+\
+                f" {DAY_NAMES[d]} {DATES[d]}) "
             print(f"\n{start_str:-^80}\n")
             # step 0: based on current time, process in-flight trips to remove
             # passengers from cabs if they've finished their journey
@@ -483,6 +470,7 @@ for d in D:
             active_requests = active_requests.append(
                 new_requests.drop(['window','day','hour'],axis=1)
                 )
+            comp_record['num_current_requests'] = active_requests.shape[0]
             
             # process pickups and drop offs
             active_requests = update_current_state(t,
@@ -493,20 +481,23 @@ for d in D:
                                                    path_finder)            
             end_update_state = time.process_time()
             print(f"  - processing time = {end_update_state-start_update_state:0.1f}s\n")
+            comp_record['state_update_time'] = end_update_state-start_update_state
                         
             # step 1: create the rv graph
             print(f"RV performance {active_requests.shape[0]} requests:")
-            start = time.process_time()
+            start_rv = time.process_time()
             rv_graph,active_requests = create_rv_graph(
                 t,active_requests.copy(),
                 times
                 )
-            end = time.process_time()
+            end_rv = time.process_time()
+            comp_record['rv_compute_time'] = end_rv-start_rv
+            comp_record['num_rv_edges'] = len(list(rv_graph.edges))
             
             # step 2: explore complete - subregions of the rv graph for
             # cliques
             print(f"  - number of edges: {len(list(rv_graph.edges))}")
-            print(f"  - processing time: {end-start:0.1f}s\n")
+            print(f"  - processing time: {end_rv-start_rv:0.1f}s\n")
             
             print("RTV performance:")
             start_rtv = time.process_time()
@@ -514,42 +505,43 @@ for d in D:
             end_rtv = time.process_time()
             print(f"  - number of edges: {len(list(rtv_graph.edges))}")
             print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
+            comp_record['rtv_compute_time'] = end_rtv-start_rtv
+            comp_record['num_rtv_edges'] = len(list(rtv_graph.edges))
 
             # step 3: optimization
-            """
-            V, R, T, VT, RT = create_ILP_data(rtv_graph)
-            Vehicle_Trips1, Requests_Trips1 = allocate_trips(V, R, T, VT, RT)            
-            """
-            
             print("Greedy Assignment performance:")
-            start_rtv = time.process_time()
-            rt_graph = greedy_assignment(rtv_graph, k)
-            end_rtv = time.process_time()
-            print(f"  - number of edges: {len(list(rtv_graph.edges))}")
-            print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
+            start_greedy = time.process_time()
+            rtv_graph = greedy_assignment(rtv_graph, k)
+            end_greedy = time.process_time()
+            print(f"  - processing time: {end_greedy-start_greedy:0.1f}s\n")
+            comp_record['greedy_time'] = end_greedy-start_greedy
 
             print("Create data performance:")            
-            start_rtv = time.process_time()
+            start_data = time.process_time()
             V, R, T, VT, RT, TV = create_ILP_data_v2(rtv_graph)
-            end_rtv = time.process_time()
-            print(f"  - number of edges: {len(list(rtv_graph.edges))}")
-            print(f"  - processing time: {end_rtv-start_rtv:0.1f}s\n")
-
+            end_data = time.process_time()
+            print(f"  - processing time: {end_data-start_data:0.1f}s\n")
+            comp_record['data_gen_time'] = end_data-start_data
             
             # Get the Trip assignments
-            print("Trip ILP assignment:")
+            print("Trip ILP assignment:")            
+            num_main_ilp_variables = sum(len(t) for t in VT.values())
+            num_main_ilp_variables += len(R)
+            num_main_ilp_constraints = len(R) + len(V) + len(T)            
+            print(f"  - {num_main_ilp_variables} ILP variables")    
+            print(f"  - {num_main_ilp_constraints} ILP constraints")
             start_assign = time.process_time()
             Trips = allocate_trips_v2(V, R, T, VT, RT, TV,
                                       suppress_output=True)
             end_assign = time.process_time()
             print(f"  - number of trips assigned: {len(Trips)}")
             print(f"  - processing time: {end_assign-start_assign:0.1f}s\n")
-            
-            
-            
-            # This function simply adds trips to Cabs as a "timetable"
-            # we only create passengers and add them to cabs in subsequent
-            # iterations                 
+            comp_record['num_main_ilp_vars'] = num_main_ilp_variables
+            comp_record['num_main_ilp_constr'] = num_main_ilp_constraints
+            comp_record['main_ilp_time'] = end_assign-start_assign
+                        
+            # This function adds trips to cabs as "bookings" and removes
+            # old bookings               
             print("Booking assigned trips with cabs:")
             start_pro_ass = time.process_time()
             unallocated,idle = book_trips(
@@ -560,34 +552,48 @@ for d in D:
             print(f"  - {unallocated.shape[0]}/{active_requests.shape[0]} unallocated requests")
             print(f"  - {len(idle)}/{M} idle cabs")
             print(f"  - processing time {end_pro_ass-start_pro_ass:0.1f}s")
+            comp_record['num_trips'] = len(Trips)
+            comp_record['booking_time'] = end_pro_ass-start_pro_ass
             
             # Allocate unallocated trips idle cabs
             print("\nRebalancing idle vehciles:")
+            num_bal_ilp_vars = len(idle)*unallocated.shape[0]
+            num_bal_ilp_constr = len(idle)+unallocated.shape[0]+1
+            print(f"  - {num_bal_ilp_vars} ILP variables")
+            print(f"  - {num_bal_ilp_constr} ILP constraints")
             start_rebalance = time.process_time()
-            rebalanced = rebalance(idle, unallocated, times, Taxis,
+            rebalanced = rebalance(idle,unallocated,times,Taxis,
                                   suppress_output=True)
             end_rebalance = time.process_time()
             print(f"  - {len(rebalanced)} redirected vehicles")
-            print(f"  - processing time {end_rebalance-start_rebalance:0.1f}s")            
+            print(f"  - processing time {end_rebalance-start_rebalance:0.1f}s")
+            comp_record['num_bal_ilp_vars'] = num_bal_ilp_vars
+            comp_record['num_bal_ilp_constr'] = num_bal_ilp_constr
+            comp_record['bal_ilp_time'] = end_rebalance-start_rebalance
+            comp_record['num_rebalanced'] = len(rebalanced)
             
             # Apply allocations
             print("\nBooking unallocated requests with idle cabs")
             start_balancing_act = time.process_time()
             poor_sods,still_idle = balancing_act(t,
-                                                  rebalanced,
-                                                  Taxis,
-                                                  unallocated,
-                                                  path_finder,
-                                                  idle,
-                                                  customers)
-            eng_balancing_act = time.process_time()
+                                                 rebalanced,
+                                                 Taxis,
+                                                 unallocated,
+                                                 path_finder,
+                                                 idle,
+                                                 customers)
+            end_balancing_act = time.process_time()
             print(f"  - {len(still_idle)} vehicles could not be rebalanced")
             print(f"  - {poor_sods.shape[0]} poor souls left out in the cold")
+            print(f"  - processing time {end_balancing_act-start_balancing_act:0.1f}s")
+            comp_record['rebalance_booking_time'] = end_balancing_act-start_balancing_act
             
+            # add the record
+            computation_log.append(comp_record)            
             
         # dump the logs
         event_logger.dump_logs(d,h)
         
-    #     break    
-    
-    # break
+computation_log = pd.DataFrame(computation_log)
+computation_log['MaxWait'] = MaxWait
+computation_log.to_csv(r'output_logs/computation_log.csv',index=False)

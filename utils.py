@@ -5,11 +5,11 @@ Created on Sat Sep 25 08:46:40 2021
 
 @author: rob
 """
-from IPython.display import clear_output, display
+from IPython.display import clear_output
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
-import re
+# import re
 from pathlib import Path
 
 
@@ -48,7 +48,7 @@ class ConsoleBar:
 
 class Logger:
     '''
-    to pass to passengers and taxis to record events
+    to pass to taxis to record events pickups and dropoffs
     '''
     def __init__(self,dump_path):
         self.all_records = list()
@@ -60,7 +60,6 @@ class Logger:
     def make_log(self,time,passenger,cab,action,location=None):
         """
         Use this to record:
-            - when a trip is allocated or updated
             - when a passenger is picked up or dropped off        
         """
         self.all_records.append(
@@ -73,12 +72,30 @@ class Logger:
         
     def dump_logs(self,day,hour):
         
-        # put the data into a df and then dump it in a csv
+        # put the data into a df, dump to a csv then clear the records to
+        # save memory.
         pd.DataFrame(self.all_records).to_csv(
             os.path.join(self.dump_path,f"{day}_{hour}.csv"),index=False
             )
         self.all_records = []
-            
+
+
+def format_time(h,t):
+    """
+    Formats the time in a more familiar way
+    """
+    
+    # calculate the seconds and minutes from total seconds
+    seconds = t%60
+    minutes = (t//60)%60
+    
+    # if the minutes == 0, then increase
+    # the hour by one
+    h = h + 1 if seconds+minutes == 0 else h
+    
+    # return the string
+    return f"{h}:{minutes:02d}:{seconds:02d}"
+          
         
 def is_cost_error(cost,path,pair,times,show=False):
     """
@@ -219,10 +236,9 @@ def assign_basejt(requests,times):
         
     return pd.concat(assigned).sort_index()   
 
+
 def shortest_path(pair,times,MaxWait):
-    """
-    TODO: update comments
-    
+    """    
     some helpful information:
         - only second pickup incurs an additional wait delay
         - when deciding who to drop first, 
@@ -619,10 +635,8 @@ def update_current_state(current_time,active_requests,Taxis,MaxWait,customers,
 def book_trips(current_time,Trips,Taxis,active_requests,
                path_finder,rtv_graph,CabIds,customers):
     """
-    This function simply sets trips for cabs
+    This function sets trips for cabs and resets existing bookings
     
-    TODO: We need to know if a request is re-booked and cancel the
-    old booking
     """    
     
     allocated_requests = set()
@@ -681,10 +695,12 @@ def balancing_act(current_time,allocations,Taxis,unallocated,
         customers[r] = dict(cab=Taxis[cab_id],is_rebalance=True)    
         
         # set the trip in the new cab
-        Taxis[cab_id].book_trip(path,
-                               current_time,
-                               unallocated.loc[[r],:],
-                               path_finder)
+        Taxis[cab_id].book_trip(
+            path,
+            current_time,
+            unallocated.loc[[r],:],
+            path_finder
+            )
         
         allocated_requests.add(r)
         allocated_taxis.add(cab_id)
@@ -692,9 +708,9 @@ def balancing_act(current_time,allocations,Taxis,unallocated,
     # get the unallocated requests
     poor_sods = unallocated.drop(allocated_requests)
     
-    # candidate idle cabs
+    # return the cabs that are still idle
     still_idle = set(idle) - allocated_taxis
     
-    return poor_sods,idle
+    return poor_sods,still_idle
     
     
