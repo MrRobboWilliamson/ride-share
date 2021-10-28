@@ -10,7 +10,6 @@ import struct
 import numpy as np
 import pandas as pd
 import networkx as nx
-from utils import ConsoleBar
 
 ROOT = 'datasets'
 JT_FOLDER = r'journey_times'
@@ -24,10 +23,13 @@ ROADS = pd.read_csv(os.path.join(
 # update the indexing to match 0 indexing
 ROADS -= 1
 
+
 def create_weighted_graph(filenm):
-        
-    # get the link journey times and join to the
-    # road links
+    """
+    Reads the road network street times and generates a
+    corresponding directed graph
+    """
+    
     link_times = pd.read_csv(filenm,header=None)
     weighted_links = pd.concat([ROADS,link_times],axis=1)
     weighted_links.columns = ['o','d','jt']
@@ -37,13 +39,21 @@ def create_weighted_graph(filenm):
         edge_attr='jt',create_using=GRAPHTYPE
     )
 
-# create an object to retrieve the shortest paths for 
+
 class ShortestPathFinder:
+    """    
+    This is provided to taxis in a stateless fashion calculate intermediate
+    nodes in the road network on a needs basis
+    
+    There should only be one instantiated path_finder per hour
+    """
     
     def __init__(self,network,times):
         
         self.G = network
         self.times = times
+        
+        # attempt at memoization
         self.memory_ = dict()
         
     def shortest_between_points(self,source,target):
@@ -75,35 +85,27 @@ class ShortestPathFinder:
         """
         Parameters
         ----------
-        path : list of requests and nodes
-        requests : are
+        first_node : loc_id of cab's current or next location
+        path : list of requests, nodes and is_pickup flags
+        time : reference time (s)
         
         Returns
         -------
         a dataframe with columns ['time','loc','pickup','dropoff']
-        
-        There's probably a more efficient way to do this, but
-        my brain is shutting down
+        - pickup / dropoff will contain a request / passenger id
+          where a pickup or drop off is scheduled at that location
         """
         
         # this is the allocated path from the rtv-graph - just need to 
         # insert the first node (cab's expected location)
         path = [(None,first_node,False),]+[step for step in path]
         events = [[time,first_node,None,None],]
-        picked = []   
         for source,target in zip(path[:-1],path[1:]):
             
             # get the detailed steps in the path
             route = self.shortest_between_points(source[1],target[1])
             
-            # if we havn't seen this request, it's a pickup
-            # otherwise a dropoff
-            # is_pickup = False
-            # if target[0] not in picked:
-            #     picked.append(target[0])
-            #     is_pickup = True 
-            
-            # if we have colocated events, then just
+            # if we have co-located events, then just
             # process the target and there is no time adjustment
             if len(route) == 1:                
                 if target[2]:
@@ -116,7 +118,7 @@ class ShortestPathFinder:
                         )
 
             for from_,to_ in zip(route[:-1],route[1:]):
-                # get the step time and step in time
+                # get the time-step and then step-in-time
                 time += self.times[from_][to_]
                 
                 if to_ == target[1] and target[2]:
@@ -141,13 +143,13 @@ class ShortestPathFinder:
 class JourneyTimes():
     
     """
-    Assumes the journey times were extracted and lifted up a level
-    to SatMat from Sat
+    Class for reading od journey time matricies
+    - also gets a shortest path finder for a given day,hour
     """
     
     def __init__(self):
         
-        # create binary references
+        # create file references
         self.root = ROOT
         self.jt_folder = os.path.join(ROOT,JT_FOLDER)
         self.link_folder = os.path.join(ROOT,LINK_FOLDER)
@@ -163,11 +165,13 @@ class JourneyTimes():
                             for h in range(24)] \
                             for day in ['sun','wd','sat']]
             
+            
     def get_shortest_path_finder(self,day,hour,times):
         """
         PARAMS:
-            - day int
-            - hour int
+            - day int, 0-6
+            - hour int, 0-23
+            - times od journey times
             
         RETURNS:
             - ShortestPathFinder object 
@@ -182,7 +186,7 @@ class JourneyTimes():
     def get_journey_times(self,day,hour):
         """
         Reads the journey times from disk:
-            - output size seems to be too big
+            - seems to be too big to load them all at once
             
         Returns shortest path journey times
         """
@@ -194,16 +198,17 @@ class JourneyTimes():
         data = struct.unpack('H'*((len(content))//2),content)        
         times = np.reshape(data,(4092,4092))
         
+        # ignore the first row / column - all zeros
         return times[1:,1:]        
         
         
     def get_hourofday(self,day,hour):
         
         """
-        Reads the journey times and link times from disk:
-                        
-        Returns shortest path journey times and a weighted network to
-        query the detailed shortest path and times.
+        Returns journey times and shortest path finder for a 
+        given day, hour
+        - day int, 0-6
+        - hour int, 0-23
         """
         
         times = self.get_journey_times(day,hour)
@@ -237,9 +242,4 @@ class Requests():
         return df
 
 if __name__ == "__main__":
-    # reqs = Requests()
-    # requests = reqs.read_requests(calc_jts=True)
-    # requests.to_csv("datasets/requests_with_jts.csv")
-    
-    jt = JourneyTimes()
-    times = jt.get_hourofday(0,7)   
+    pass

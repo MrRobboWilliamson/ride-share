@@ -8,9 +8,8 @@ Created on Tue Sep 21 16:03:29 2021
 import pandas as pd
 import numpy as np
 from colorama import Fore,Style
-delta = 30
 
-# Excption handling classes
+# Exception handling classes
 class LatePickupError(Exception):
     pass
 class LateDropoffError(Exception):
@@ -26,12 +25,13 @@ ordinal = lambda n: "%d%s" % (n,"tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
 class Taxi():
     
     """
-    Creates a taxi for our simulation
+    Taxi class has:
+        - manages own bookings, pickups and dropoffs
     """
     
     def __init__(self,taxi_id,max_capacity,init_loc,logger,max_delay,max_wait):
         
-        # create variables
+        # create attributes
         self.taxi_id = taxi_id
         self.max_capacity = max_capacity
         self.passengers = []
@@ -52,19 +52,13 @@ class Taxi():
     
     def update_current_state(self,current_time,customers,path_finder):
         """
-        
-        Parameters
-        ----------
-        time : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
+        Realise booked jobs in the timetable based on the 
+        current time
+        - process pickups and dropoffs
+        - return tuple of lists (pickup_ids,dropoff_ids)
         """
 
         # get the timetable up to now for realization
-        # temp = self.current_timetable_.copy()
         to_realize = self.current_timetable_[
             self.current_timetable_['time']<=current_time
             ]
@@ -112,7 +106,6 @@ class Taxi():
             
             # pickup the passenger
             passenger = self.pickup_passenger(r,loc,time)
-            # customers[int(r)]['passenger'] = passenger
             
             # assign the passenger object to the trip
             # data for removal at dropoff
@@ -124,10 +117,7 @@ class Taxi():
             # pop the trip details
             dets = self.trip_data.pop(r)
             self.dropoff_passenger(dets['passenger'],loc,time)
-            
-            # finally remove the customer from the customers dict
-            # customers.pop(int(r))
-        
+                    
         # return a list of the pickups to remove from active requests.
         return (list(set(pickups['pickup'].values)-rebalances),
                 list(dropoffs['dropoff'].values))
@@ -136,8 +126,7 @@ class Taxi():
     def get_passengers(self,time):
         
         """
-        Returns the taxi's current passengers (at the next
-        location in the journey)
+        Returns the taxi's passengers at a given point in time
         """
         
         # check if any of the current passengers will dropped 
@@ -208,8 +197,7 @@ class Taxi():
     def dropoff_passenger(self,passenger,loc,time):
         
         """
-        Drops off a passenger, records when the drop off was and how long the
-        travel time and entire request to drop off time was
+        Drops off a passenger and logs the event
         """
         self.passengers.remove(passenger)
         
@@ -232,6 +220,7 @@ class Taxi():
         PARAMETERS
         ----------
         path : list of requests and pickup / dropoff nodes
+        current_time: is the sim time
         requests : is the slice of the active requests that
             contains the requests assigned to this trip.
         path_finder : is a utils.ShortestPathFinder object that is 
@@ -248,8 +237,7 @@ class Taxi():
         # add this new trip the current trip data
         self.trip_data = {**self.trip_data,**requests.to_dict('index')}
                 
-        # update the timetable. drop dups incase we have overlaps
-        # test without if it's slow
+        # update the timetable
         time,first_node = self.find_me(current_time)                
         self.current_timetable_ = path_finder.get_timetable(
             first_node,path,time
@@ -274,11 +262,7 @@ class Taxi():
                 path.append(
                     (dropoff,loc,False)
                     )
-        
-        # print("\nPath from reset_booking:",self)
-        # print(path)
-        # print()
-        
+                
         time,first_node = self.find_me(current_time)
         self.current_timetable_ = path_finder.get_timetable(
             first_node,path,time
@@ -294,47 +278,42 @@ class Taxi():
         """
         
         # remove the bookings from the timetable and the trip from the 
-        # trip data
-        self.trip_data.pop(r)
-        to_remove = self.current_timetable_[
-                (self.current_timetable_['pickup']==r) |
-                (self.current_timetable_['dropoff']==r)].index
-        tt = self.current_timetable_.drop(to_remove)
+        # trip data        
+        if r in self.trip_data:
+            self.trip_data.pop(r)
+            
+        # have to check if the timetable's empty to avoid the odd error
+        if not self.current_timetable_.empty:
+            to_remove = self.current_timetable_[
+                    (self.current_timetable_['pickup']==r) |
+                    (self.current_timetable_['dropoff']==r)].index
+            tt = self.current_timetable_.drop(to_remove)
         
-        # try:
-        #     to_remove = self.current_timetable_[
-        #         (self.current_timetable_['pickup']==r) |
-        #         (self.current_timetable_['dropoff']==r)].index
-        #     tt = self.current_timetable_.drop(to_remove)
-        # except KeyError:
-        #     print("\nNo timetable to remove from:",self)
-        #     print("request:",r)
-        #     print()
-        #     # if any events remain, find the next event.  
-        #     next_time,next_loc = self.find_me(current_time)
-        #     self.current_timetable_ = pd.DataFrame()
-        #     self.loc = next_loc
-        #     return
+            # the jobs are any row of the tt with a pickup or dropoff entry
+            jobs = tt.loc[:,['pickup','dropoff']].dropna(axis=0,how='all')
         
-        # the jobs are any row of the tt with a pickup or dropoff entry
-        jobs = tt.loc[:,['pickup','dropoff']].dropna(axis=0,how='all')
+            # if no jobs clear the timetable and update the cab location.           
+            if jobs.empty:
+                # if any events remain, find the next event.  
+                next_time,next_loc = self.find_me(current_time)
+                self.current_timetable_ = pd.DataFrame()
+                self.loc = next_loc
         
-        # if no jobs clear the timetable and update the cab location.           
-        if jobs.empty:
+            # otherwise, use the jobs and current location to rebuild the
+            # timetable.
+            else:
+                self.reset_booking(tt.loc[jobs.index],current_time,path_finder)   
+
+        else:
             # if any events remain, find the next event.  
             next_time,next_loc = self.find_me(current_time)
             self.current_timetable_ = pd.DataFrame()
-            self.loc = next_loc
-        
-        # otherwise, use the jobs and current location to rebuild the
-        # timetable.
-        else:
-            self.reset_booking(tt.loc[jobs.index],current_time,path_finder)                                                  
+            self.loc = next_loc               
                         
         
     def find_me(self,current_time):
         """
-        Returns time when arriving at the next node.
+        Returns time when arriving at the next node and the next node
         
         If the cab is idle, return the current time and location
         """
@@ -352,7 +331,7 @@ class Taxi():
     
     def is_idle(self):
         """
-        Checks if the cab has no passengers or a trip allocated        
+        Checks if the cab has no passengers or allocated trips
         """
         return len(self.passengers) == 0 and self.current_timetable_.empty
     
@@ -365,7 +344,12 @@ class Taxi():
 class Passenger():
     
     """
-    Creates a passenger for our simulation
+    Passenger class:
+        - includes assertions to notify of late pickups and drop offs
+        - these can still happen usually within 1-2s but up to 9s,
+          due to precision differences between the od shortest paths and
+          calculated intermediate times
+        - also checks for multiple dropoffs and pickups
     """
     
     def __init__(self,req_id,pickup_node,drop_off_node,req_time,base_jt,
@@ -377,7 +361,6 @@ class Passenger():
         self.drop_off_node = drop_off_node
         self.req_time = req_time
         self.base_jt = base_jt
-        self.status = 0
         self.pickup_time = -1
         self.drop_off_time = -1
         self.wait_time = 0

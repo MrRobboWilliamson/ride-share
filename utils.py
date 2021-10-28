@@ -5,57 +5,22 @@ Created on Sat Sep 25 08:46:40 2021
 
 @author: rob
 """
-from IPython.display import clear_output
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
-# import re
 from pathlib import Path
 
-
-class ConsoleBar:
-    def __init__(self,num_ticks,length=100):
-        # check that end - start is greater than one and that they are both integers
-        if type(num_ticks) is not int:
-            raise TypeError('arg "num_ticks" must be type int')
-        if num_ticks < 1:
-            raise ValueError("num_ticks not > 0")
-
-        #  get the absolute size and normalise
-        self.num_ticks = num_ticks
-        self.ticker = 0
-        self.length = length
-
-        # start the ticker
-        # print('\r   {:>3.0f}%[{: <101}]'.format(0, '='*0+'>'), end='\r')
-
-    def tick(self, step=1):
-        print_end = '\r\r'
-        self.ticker += step
-        if self.ticker > self.num_ticks:
-            self.ticker = self.num_ticks
-            # print a warning
-            print('Warning: The ticker is overreaching and has been capped at the end point', end='\r')
-        elif self.ticker == self.num_ticks:
-            print_end = '\n'
-
-        progress = int((self.ticker/self.num_ticks)*100)
-        bar_ticks = int((self.ticker/self.num_ticks)*self.length)
-        bar_str = '   {:>3.0f}%[{: <' + str(self.length+1) + '}]'
-        clear_output(wait=True)
-        print(bar_str.format(progress, '.'*bar_ticks+'>'), end=print_end)
-        
 
 class Logger:
     '''
     to pass to taxis to record events pickups and dropoffs
     '''
-    def __init__(self,dump_path):
+    def __init__(self,dump_path,stamp):
         self.all_records = list()
-        self.dump_path = dump_path
+        self.dump_path = os.path.join(dump_path,stamp)
         
         # ensure the dump path exists
-        Path(dump_path).mkdir(exist_ok=True)
+        Path(self.dump_path).mkdir(exist_ok=True)
         
     def make_log(self,time,passenger,cab,action,location=None):
         """
@@ -82,14 +47,14 @@ class Logger:
 
 def format_time(h,t):
     """
-    Formats the time in a more familiar way
+    formats the time in a more familiar way
     """
     
     # calculate the seconds and minutes from total seconds
     seconds = t%60
     minutes = (t//60)%60
     
-    # if the minutes == 0, then increase
+    # if the minutes & seconds == 0, then increase
     # the hour by one
     h = h + 1 if seconds+minutes == 0 else h
     
@@ -160,7 +125,10 @@ def is_cost_error(cost,path,pair,times,show=False):
     
         
 def plot_requests(t,requests,MaxWait,r=None):
-    
+    """
+    For plotting a bunch of requests as a Gantt style chart
+    - not used anymore    
+    """
     colors = ['tab:blue']*requests.shape[0]
     
     if r is not None:
@@ -239,11 +207,14 @@ def assign_basejt(requests,times):
 
 def shortest_path(pair,times,MaxWait):
     """    
-    some helpful information:
-        - only second pickup incurs an additional wait delay
-        - when deciding who to drop first, 
-            - if first drop, picked up second - only the last dropped gets jt delays
-            - other wise they both do    
+    Checks for the lowest cost way to combine two requests in a shared
+    trip
+    - if any combination breaches the max wait or in journey delays
+      then it is skipped
+    - returns the corresponding path and cost
+    - path is a list of tuples / False
+        - each tuple is (request_id,location_id,is_pickup)
+        - returns False if a feasible path can't be found 
     """    
     
     # pickups and dropoffs
@@ -315,12 +286,11 @@ def shortest_path(pair,times,MaxWait):
 def shortest_withpassenger(passenger,start_time,start_loc,
                            request_details,times,MaxWait):
     """
-    Check with the passenger current state if it can service
-    a request.
-    
-    # with any of these combinations.
-    # start time and loc are when capacity becomes available
-    # to divert to the request.    
+    Checks taxis with a passenger if it can be shared with a request
+    - if any combination breaches max wait of the request or max in journey
+      delays of the request / passenger, then skipped
+    - returns lowest cost path if a feasible combination is found
+    - returns False if no feasible combination is found
     """    
 
     # get the passenger current state
@@ -405,12 +375,15 @@ def shortest_withpassenger(passenger,start_time,start_loc,
     return wait_cost,best_path[1]
     
 
-# add a feasible single request trip to the rtv graph
-# edge of the rv graph and no delay time for the trip. Add an
-# 'tv' edge with those two values and a 'rt' edge between the
-# request and the trip. NOTE: Trips are tuples so that multi
-# request trips can be accomodated.
+
 def add_one_req(t,rtv_graph,rv_graph,trip,vehicle,active_requests):
+    """
+    # add a feasible single request trip to the rtv graph
+    # edge of the rv graph and no delay time for the trip. Add an
+    # 'tv' edge with those two values and a 'rt' edge between the
+    # request and the trip. NOTE: Trips are tuples so that multi
+    # request trips can be accomodated.    
+    """
     
     # get the pickup and drop off times to satisfy the trip with
     # this vehicle
@@ -433,50 +406,27 @@ def add_one_req(t,rtv_graph,rv_graph,trip,vehicle,active_requests):
     return rtv_graph
 
 
-# check a one request trip with a vehicle that already has a passenger in it.
-# If the added delay to the passenger in the vehicles is within bounds add 
-# the trip to the rtv graph otherwise discard
 def check_one_req_one_passenger(t,Taxis,rv_graph,rtv_graph,times,active_requests,
                   vehicle,trip,MaxWait):#,MaxQLoss):
-    
     """
-    RW: I'm a bit confused as to how we account for when / where
-    the passenger (r1) is at this point in time
-    - maybe you've thought through this
-    - we would need to consider when they were picked up
-      to estimate where they are in their journey (I think)
-    - note to self: might need to draw a diagram for this,
-      maybe we can be naive to the current trip progress?
+    # check a one request trip with a vehicle that already has a passenger in it.
+    # If the added delay to the passenger in the vehicles is within bounds add 
+    # the trip to the rtv graph otherwise discard
     """    
     
     # get the passenger's details
     p1 = Taxis[vehicle].passengers[0]
-    # r1 = p1.req_id
     
-    # get the taxi's next location
+    # get the taxi's next location and passenger's current delays
     t1,o1 = Taxis[vehicle].find_me(t)
-    # o1 = Taxis[vehicle].loc # passenger is in the taxi
-    # d1 = p1.drop_off_node
     qos1 = p1.wait_time
-    # bjt1 = p1.base_jt
-    # bjt1 = times[o1][d1] # whatever is left of the journey
     
     # get the new pick up request details
     r2 = trip[0]
-    t2,o2,d2,ltp2,bjt2,qos2,_ = active_requests.loc[r2]
+    t2,o2,d2,ltp2,bjt2,qos2 = active_requests.loc[r2]
     qos2 += rv_graph.get_edge_data(r2,vehicle)['cost']
-    
-    # here we need to check if we drop off the passenger first
-    # or pickup the request first???
-    # build the data pair for the shortest path algorithm
-    # pair = dict([(r1,dict(
-    #             route=(o1,d1),other=r2,wait=qos1,base=bjt1)),
-    #             (r2,dict(
-    #             route=(o2,d2),other=r1,wait=qos2,base=bjt2))
-    #             ])
-    
-    # get the cost and shortest path
-    # cost,path = shortest_path(pair,times,MaxWait)
+        
+    # get the cost and shortest path of combining passenger and request
     cost,path = shortest_withpassenger(
                         p1,t1,o1,
                         dict(req_id=r2,route=(o2,d2),
@@ -484,47 +434,29 @@ def check_one_req_one_passenger(t,Taxis,rv_graph,rtv_graph,times,active_requests
                         times,MaxWait
                         )  
     
-    # print("path",path)
-    
-    # if the shortest path cost exceeds the max delays,
-    # discard the trip, otherwise add the 'rt' and 'tv' edges
-    # RW: the shortest path will return path=False, if any
-    # time constraints are broken, so if path should work
-    # if cost > MaxQLoss:
-    #     pass
-    # else:
     if path:
-        
-        # RW: if we've found a valid path, do we need to update the rv_graph?
-        # create the order details for this vehicle-trip combo
-        # this data will be used to realise the pickups and drop offs
-        
-        ## how to recalculate the dropoff time for r1
-                
+        # calculate the total cost                
         tot_wait = qos2 + qos1
         
         # add 'tv' edge
-        rtv_graph.add_edge(trip,vehicle,wait=tot_wait,delay=cost, #-tot_wait,
+        rtv_graph.add_edge(trip,vehicle,wait=tot_wait,delay=cost,
                            edge_type='tv',rnum=1,path=path)
+        
         # add 'rt' edge
         rtv_graph.add_edge(r2,trip,edge_type='rt')
     
     return rtv_graph
 
 
-# checks a trip that has two requests for feasibility and either discards it
-# or adds it to the rtv_graph.  We know the trip delay and
-# the wait time for the first pickup is within feasible 
-# limits, just need to check the additional wait time for 
-# the second pickup (time between first and second node)
 def check_two_req(t,rv_graph,rtv_graph,times,active_requests,
                   vehicle,trip,MaxWait):
     
     """
-    I think all the paired costs have been accounted for,
-    we just need to add the journey time from the vehicle
-    current locationt to the first request onto the total
-    cost.
+    # checks a trip that has two requests for feasibility and either discards it
+    # or adds it to the rtv_graph.  We know the trip delay and
+    # the wait time for the first pickup is within feasible 
+    # limits, just need to check the additional wait time for 
+    # the second pickup (time between first and second node)
     """
 
     # trip_data = rv_graph.get_edge_data(trip[0],trip[1],vehicle)
@@ -540,19 +472,10 @@ def check_two_req(t,rv_graph,rtv_graph,times,active_requests,
     qos2 = active_requests.loc[r2]['qos']
     qos1 = active_requests.loc[r1]['qos']
     
-    # RW: updated this to account for the vehicle time to reach the requests
     if (r1_wait_v + qos1) > MaxWait or \
         (r2_wait_r1 + qos2 + r1_wait_v) > MaxWait:
-        
-        # we need to keep track of the unnassigned for rebalancing fleet
-        # and vehicles may become available near by in a future window
-        
-        pass
-    
+        pass    
     else:
-        # qos1 = active_requests.loc[r1]['qos']
-        # tot_wait = \
-        #       qos1 + ad_wait + qos2
         total_wait = r1_wait_v + qos1 + r2_wait_r1 + qos2
         rr_wait = total_wait - r1_wait_v
         delay = rr_data['cost'] - rr_wait
@@ -580,11 +503,11 @@ def update_current_state(current_time,active_requests,Taxis,MaxWait,customers,
     Purpose:
         - update cab state: pickup and dropoff passengers
         - remove picked up passengers from the active requests
-        - TODO: remove ignored requests from the active requests
-            - define ignored as timed out. Current time - req time > MaxWait
+        - remove passengers who's max wait is exceeded from active request
+          pool
     """
     
-    # loop over the cabs and 
+    # loop over the cabs
     picked_up = []
     dropped_off = []
     for cab in Taxis.values():
@@ -593,57 +516,45 @@ def update_current_state(current_time,active_requests,Taxis,MaxWait,customers,
         if cab.is_idle():
             continue        
         else:
+            # update current state per cab and collect all the 
+            # picked up and dropped off passengers
             picked,dropped = cab.update_current_state(current_time,
                                                       customers,
                                                       path_finder)
             picked_up += picked
             dropped_off += dropped
     
-    # get the requests that were never assign a trip
+    # get the requests that were never assign a trip and who's
+    # wait time has exceeded the MaxWait time
     ignored = active_requests[
         (current_time-active_requests['time']) > MaxWait
         ].index.values
     
-    # # remove ignored customers from the customer dictionary.
-    # for ignr in set(ignored)-set(picked_up):
-    #     if ignr in customers:
-    #         customers.pop(ignr)    
     print(f"  - {len(picked_up)} passengers pickup up")
     print(f"  - {len(dropped_off)} passengers dropped off")
     print(f"  - {ignored.shape[0]} requests ignored")
 
     # combine the picked up and ignored passengers to remove them
-    # from the active requests and the customer collection
+    # from the active requests and the customer collections
     to_remove = set(picked_up) | set(ignored)
     for cust in to_remove:
         if cust in customers and not customers[cust]['is_rebalance']:
             customers.pop(cust) 
     return active_requests.drop(to_remove)
-    # # try to remove if there is key error, suss out why
-    # try:    
-    #     return active_requests.drop(to_remove)
-    # except KeyError as ke:
-    #     m = re.match(r"\[(\d+)\.\]",ke.args[0])
-    #     invalid = int(m.group(1))
-        
-    #     # see if we can get the customer, this will 
-    #     # indicate its not and ignored error
-    #     customer = customers[invalid]['passenger']
-    #     print("\nWeird stuff",customer,customer.num_pickups)
         
 
 def book_trips(current_time,Trips,Taxis,active_requests,
                path_finder,rtv_graph,CabIds,customers):
     """
     This function sets trips for cabs and resets existing bookings
-    
+    - return the idle cabs and unallocated requests
     """    
     
     allocated_requests = set()
     allocated_taxis = set()
     for trip_requests,cab_id in Trips.items():
         
-        # to add a trip to a cab, we need a planned path      
+        # to add a trip to a cab, we need the corresponding path      
         path = rtv_graph.get_edge_data(trip_requests,cab_id)['path']
                 
         # check if any requests have already been allocated
@@ -654,11 +565,14 @@ def book_trips(current_time,Trips,Taxis,active_requests,
             customers[r] = dict(cab=Taxis[cab_id],is_rebalance=False)
         
         # set the trip in the new cab
-        Taxis[cab_id].book_trip(path,
-                               current_time,
-                               active_requests.loc[list(trip_requests)],
-                               path_finder)
+        Taxis[cab_id].book_trip(
+            path,
+            current_time,
+            active_requests.loc[list(trip_requests)],
+            path_finder
+            )
         
+        # collect the allocated requests and cabs
         allocated_requests |= set(trip_requests)
         allocated_taxis.add(cab_id)
     
@@ -674,8 +588,8 @@ def book_trips(current_time,Trips,Taxis,active_requests,
     return unallocated,idle
 
 
-def balancing_act(current_time,allocations,Taxis,unallocated,
-               path_finder,idle,customers):
+def balancing_act(current_time,allocations,Taxis,unallocated,path_finder,
+                  idle,customers):
     """
     This function allocates unallocated requests to 
     idle vehicles
@@ -687,11 +601,12 @@ def balancing_act(current_time,allocations,Taxis,unallocated,
         
         # check if any requests have already been allocated
         # if so, remove the request from the old allocation
-        # if r in customers:
-        #     customers[r]['cab'].remove_booking(r,current_time,path_finder)
         r = path[0][0]
         if r in customers:        
             customers[r]['cab'].remove_booking(r,current_time,path_finder)
+            
+        # setting is_rebalance=True stops the passenger from being picked
+        # up - this is a design choice
         customers[r] = dict(cab=Taxis[cab_id],is_rebalance=True)    
         
         # set the trip in the new cab
@@ -702,6 +617,7 @@ def balancing_act(current_time,allocations,Taxis,unallocated,
             path_finder
             )
         
+        # collect rebalanced requests and cabs
         allocated_requests.add(r)
         allocated_taxis.add(cab_id)
     
