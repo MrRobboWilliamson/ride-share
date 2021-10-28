@@ -8,6 +8,9 @@ from gurobipy import Model,GRB,quicksum
 import numpy as np
 
 def create_ILP_data_v2(rtv_graph):
+    """
+    Generates data for the Main ILP
+    """
     
     rtv_nodes = rtv_graph.nodes
     V = [n for n in rtv_nodes if isinstance(n,str)] # Our Vehicles v
@@ -52,6 +55,7 @@ def create_ILP_data_v2(rtv_graph):
 
 
 def greedy_assignment(rtv_graph, k):
+    
     
     greedy_dict = {}  
     rtv_edges = rtv_graph.edges(data=True)
@@ -101,6 +105,9 @@ def greedy_assignment(rtv_graph, k):
 
 
 def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):    
+    """
+    Main optimization
+    """
 
 
     unallocated_cost = 99999 # arbitrary cost of not allocating a passenger
@@ -151,7 +158,10 @@ def allocate_trips_v2(V, R, T, VT, RT, TV, suppress_output=False):
     return Trips
 
 
-def rebalance(V,unallocated,times,Taxis,suppress_output=False):    
+def rebalance(V,unallocated,times,Taxis,suppress_output=False):  
+    """
+    Rebalancing optimization
+    """    
 
     m = Model('Rebalance')
     
